@@ -150,3 +150,15 @@ Block release on silent data corruption, path escape, unapproved overwrite/delet
 ## Session 5 executed qualification
 
 [Session 5 evidence](SESSION5_IMPLEMENTATION.md) preserves 168 offline passes and adds 14 integration guard passes. The disabled live case skips before external I/O. Two explicitly opted-in read runs passed against existing and separately generated Ceph fixtures. Updated user authority permitted one dedicated fixture bucket and 1,008 PUTs; all owned keys/bucket were cleaned up with absence confirmed, preserving shared manual data. This fixture tooling is separate from the GET/HEAD-only .NET harness and shipped application. Native desktop/vault and broader live faults remain pending; Linux locked self-contained publish passes. Final infrastructure teardown remains unauthorized.
+
+## Phase 1B.2 transfer coverage
+
+Offline transfer tests exercise no-replace destination races, source replacement/
+modification, symlink refusal, zero-byte/Unicode data, short reads, checksum mismatch,
+streaming with a generated 32 MiB body and 64 KiB reads, disk-full failures,
+cancellation/deadlines, conditional PUT serialization, unknown outcomes and bounded
+read-back without replay. Headless tests cover keyboard actions, independent browsing,
+terminal states, refresh and cancellation on close. Native Windows execution remains
+BLOCKED pending the VM. Live write qualification is separate from the read-only
+harness and requires independent endpoint and bucket/prefix approvals; see
+[LIVE_QUALIFICATION](LIVE_QUALIFICATION.md#single-file-write-qualification).

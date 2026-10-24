@@ -65,3 +65,7 @@ Sessions 1–6 are approved; see [Session 6 results](SESSION6_IMPLEMENTATION.md)
 ## Session 6 gate update
 
 T11 has a Fedora-produced Windows x64 evaluation ZIP with locked publishing, notices and measured distribution sizes. Actual Windows build/runtime evidence and T12 remain BLOCKED: the user confirms the VM is unavailable. [Session 6 evidence](SESSION6_IMPLEMENTATION.md) and the [Windows checklist](WINDOWS_VALIDATION.md) define the remaining handoff. Phase 1A cannot close until native Windows and remaining Fedora/vault/accessibility/performance gates are resolved. No Phase 1B or infrastructure provisioning is authorized.
+
+## Phase 1B.2 execution
+
+Single-file create-only uploads and safe downloads are implemented for review, with one active transfer, progress/cancellation and explicit ambiguous outcomes. Identified Ceph qualification covers small/zero-byte/Unicode round trips and collision protection; this does not qualify all Squid deployments or AWS. This remains pre-alpha. Phase 1C durability, native Windows transfer qualification, larger WAN workloads and later transfer features remain outstanding. No later phase starts automatically.

@@ -15,7 +15,7 @@
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
         <Button Content="Profiles" Command="{Binding ShowProfilesCommand}" />
-        <TextBlock Text="Read-only browser" />
+        <TextBlock Text="Pre-alpha · Single-file transfers" />
       </StackPanel>
     </Grid>
 
@@ -35,7 +35,7 @@
       <Border x:Name="LocalPane" Classes="pane" Padding="16" MinWidth="280"
               AutomationProperties.Name="Local files pane">
         <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
-          <TextBlock Text="LOCAL · READ ONLY" FontWeight="SemiBold" />
+          <TextBlock Text="LOCAL" FontWeight="SemiBold" />
           <TextBox x:Name="LocalLocation" Grid.Row="1" Text="{Binding Local.PathInput}"
                    PlaceholderText="Absolute directory path" ToolTip.Tip="Enter an absolute directory path and press Enter." AutomationProperties.Name="Local location" TabIndex="0" />
           <Border x:Name="LocalContent" Grid.Row="2" Focusable="True" TabIndex="1"
@@ -49,7 +49,7 @@
       <Border x:Name="RemotePane" Grid.Column="2" Classes="pane" Padding="16" MinWidth="280"
               AutomationProperties.Name="Remote storage pane">
         <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
-          <TextBlock Text="REMOTE · READ ONLY" FontWeight="SemiBold" />
+          <TextBlock Text="REMOTE" FontWeight="SemiBold" />
           <TextBox x:Name="RemoteLocation" Grid.Row="1" IsReadOnly="True" Text="{Binding Browser.Location}"
                    AutomationProperties.Name="Remote location" TabIndex="3" />
           <Border x:Name="RemoteContent" Grid.Row="2" Focusable="True" TabIndex="4"
@@ -69,7 +69,16 @@
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <StackPanel Spacing="6">
         <TextBlock Text="Transfers" FontWeight="SemiBold" />
-        <TextBlock Classes="secondary" Text="Transfers are not implemented. This browser is read-only." />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="UploadFile" Content="Upload file (Ctrl+U)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.UploadCommand}" />
+          <Button x:Name="DownloadFile" Content="Download object (Ctrl+D)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.DownloadCommand}" />
+          <Button x:Name="CancelTransfer" Content="Cancel transfer" Command="{Binding Transfers.CancelCommand}" />
+        </StackPanel>
+        <TextBlock Text="{Binding Transfers.Source}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Transfers.Destination}" TextTrimming="CharacterEllipsis" />
+        <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding Transfers.Percent}" IsVisible="{Binding Transfers.IsBusy}" />
+        <TextBlock Text="{Binding Transfers.Bytes}" />
+        <TextBlock x:Name="TransferStatus" Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
       </StackPanel>
     </Border>
 

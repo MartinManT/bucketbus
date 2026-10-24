@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/BucketBus.Core/BucketBus.Core.csproj" />
   <Project Path="src/BucketBus.S3/BucketBus.S3.csproj" />
+  <Project Path="src/BucketBus.Platform/BucketBus.Platform.csproj" />
   <Project Path="tests/BucketBus.S3.IntegrationTests/BucketBus.S3.IntegrationTests.csproj" />
 </Solution>

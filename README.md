@@ -2,7 +2,7 @@
 
 A cross-platform, Commander-style S3 file manager, with Ceph RGW as the initial validation target.
 
-Development is at **Phase 1B.1: read-only local and S3 browsing**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links; transfers remain placeholders. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+Development is at **Phase 1B.2: pre-alpha single-file transfers**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. One selected file can be uploaded create-only to a qualified target; one selected object can be downloaded without replacing local data. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
 
 ## Build and test
 
@@ -41,15 +41,15 @@ dotnet run --project src/BucketBus.Desktop -c Release --no-build --no-restore
 ## Structure
 
 - **Desktop**: Avalonia views/view models and the DI composition root.
-- **Core**: framework-independent profiles, credentials, read-only storage contracts and session lifecycle workflows.
-- **S3**: explicit AWS SDK v4 clients, bounded read-only requests and protocol normalization.
-- **Platform**: atomic JSON profiles, Windows Credential Manager and Linux Secret Service adapters.
+- **Core**: framework-independent profiles, credentials, browsing contracts and single-transfer coordination.
+- **S3**: explicit AWS SDK v4 clients, bounded browsing requests and streamed, conditional single-object transfers.
+- **Platform**: atomic JSON profiles, native safe-file operations, Windows Credential Manager and Linux Secret Service adapters.
 
 S3 and Platform depend only on Core. Desktop composes the modules. The [implementation handoff](docs/PHASE1A_PLAN.md), [architecture](docs/ARCHITECTURE.md) and [security model](docs/SECURITY_MODEL.md) govern further work.
 
 Use **Profiles** to create or edit an HTTPS endpoint, signing region, addressing style and optional bucket/prefix. Choose `SessionOnly` to keep credentials in memory or `SecureStore` to use the OS vault. Temporary session tokens require `SessionOnly`. Changing endpoint, region or addressing style detaches the old binding unless you explicitly supply replacement credentials. Profile files contain only metadata and opaque local references; do not treat them as portable credential exports. Session-only bindings need fresh credentials after restart.
 
-Select a saved profile and choose **Connect**; credentials are acquired only on that action. Allow a vault unlock prompt explicitly when needed. A configured bucket is listed directly without account discovery. If discovery is denied, enter an authorized bucket and choose **Go**. Prefixes are exact S3 prefixes, including leading/repeated slashes. **Next page** reads only one page; **Previous cached page** visits retained pages without network access. At most five pages remain cached; Refresh restarts at the first page. Rows remain in server order, with no whole-bucket sort/filter or total implied. Select an object and choose **Properties** to retrieve metadata.
+Select a saved profile and choose **Connect**; credentials are acquired explicitly for connection and transfer actions. Allow a vault unlock prompt explicitly when needed. A configured bucket is listed directly without account discovery. If discovery is denied, enter an authorized bucket and choose **Go**. Prefixes are exact S3 prefixes, including leading/repeated slashes. **Next page** reads only one page; **Previous cached page** visits retained pages without network access. At most five pages remain cached; Refresh restarts at the first page. Rows remain in server order, with no whole-bucket sort/filter or total implied. Select an object and choose **Properties** to retrieve metadata.
 
 Environment configuration and raw local evidence belong under ignored `docs/internal/`. Never add credentials to documentation, configuration, logs or source control. A separate, explicitly opted-in GET/HEAD harness is described in [live qualification](docs/LIVE_QUALIFICATION.md). Linux self-contained publishing and manual desktop checks are described in [Fedora validation](docs/FEDORA_VALIDATION.md). Native vault opt-in procedures and limitations are in the Session 2 results.
 
@@ -92,3 +92,68 @@ Manual smoke test on a graphical desktop:
    refresh the other. Confirm their locations and selections stay independent.
 5. Cancel a slow listing and close during loading. Check normal laptop sizing,
    scaling, removable drives and native screen-reader behavior manually.
+
+## Single-file transfers (pre-alpha)
+
+Navigate the local pane to a directory and the remote pane to a bucket/prefix.
+Select exactly one regular local file and choose **Upload file** (Ctrl+U), or select
+one remote object and choose **Download object** (Ctrl+D). The transfer panel shows
+the captured source/destination, bytes, progress, cancellation and terminal outcome.
+Both panes remain browsable; successful transfers refresh the affected pane only
+if you are still viewing that location. There is one active transfer at a time.
+
+Uploads concatenate the current **exact prefix** and native filename without
+Unicode normalization. The adapter streams a single PUT with `If-None-Match: *`,
+SHA-256/Content-MD5 and **zero SDK write retries**. Source identity/size/timestamps
+and full content are checked. Completion requires operation-identity and full
+SHA-256 read-back; matching size or ETag alone is never proof. Read-back needs GET
+permission and adds download traffic. A denied/lost verification response can leave
+**Outcome Unknown**, even after the provider accepted the PUT. Cancel after sending
+may also leave Outcome Unknown. Inspect the object before manually retrying;
+BucketBus never automatically retries or deletes an uncertain upload.
+
+Uploads are blocked until the exact endpoint/region/addressing/bucket has passed
+controlled live round-trip and collision qualification. The separate harness in
+[live qualification](docs/LIVE_QUALIFICATION.md#single-file-write-qualification)
+generates `upload-qualification.json` evidence. Copy the generated evidence (not
+hand-authored assertions) to the per-user BucketBus data directory: normally
+`~/.local/share/BucketBus/` on Linux (`XDG_DATA_HOME` respected), or
+`%LOCALAPPDATA%\BucketBus\` on Windows. Keep it out of Git; it contains target
+fingerprints and bucket identifiers, but no credentials. Evidence expires after
+30 days. Requalify sooner after any gateway build/configuration changes. Other
+endpoints/buckets remain blocked; one Squid test does not qualify every deployment.
+
+Downloads use the selected object's last `/` component as a single local name.
+Unsafe/reserved names, traversal components, invalid Unicode and unrepresentable
+names are rejected, never silently rewritten. Transfers reject symlink/reparse
+ancestors and sources, even though browsing can follow directory links. Linux
+creates a private random temporary directory with a named payload, then publishes
+the open file using atomic no-replace `linkat`; Windows pins ancestors and renames
+the open temporary file with `ReplaceIfExists=false`. Existing destinations,
+including race-created files/links, remain untouched. Unsupported safe-commit
+operations fail closed. Windows transfers currently require local drive paths; UNC/device paths are refused. Only owned temporary output is cleaned up.
+
+Downloads verify actual byte length and compatible server checksum evidence. The
+panel states when only length was verified; a locally computed hash is not proof
+of remote equality. ETags are opaque. The buffer is 64 KiB. Transfers have a two-hour
+total deadline; download response-body reads have a 30-second idle deadline. Single
+PUTs are limited to 5 GiB; there is no multipart support or automatic retry.
+
+**No durable queue, crash recovery or resume exists yet.** An application crash
+may leave an upload requiring manual remote inspection, or an owned temporary
+download requiring local cleanup. Nothing replays on restart. ADR-006's full MVP
+recovery contract remains for Phase 1C. Windows native file semantics, GUI and
+accessibility still require the Windows VM; headless tests are not native proof.
+
+Manual check on Fedora or Windows:
+
+1. Build/run using the commands above, install generated qualification evidence,
+   and connect an explicit profile to its qualified bucket. Use only disposable data.
+2. Select a small local file, upload with Ctrl+U and inspect the Completed and
+   SHA-256 verification text. Upload it again: expect Conflict, with original content intact.
+3. Navigate locally to a different empty directory, select the remote object and
+   download with Ctrl+D. Compare `sha256sum` (Fedora) or `Get-FileHash -Algorithm SHA256`
+   (PowerShell). Download again: expect a local conflict without replacement.
+4. Exercise zero-byte/Unicode files, cancel a larger transfer, and browse each pane
+   while it runs. Confirm cancellation/uncertainty is explicit and no partial file
+   appears under the final filename. Do not blindly repeat an uncertain upload.

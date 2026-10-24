@@ -160,6 +160,13 @@
       "bucketbus.core": {
         "type": "Project"
       },
+      "bucketbus.platform": {
+        "type": "Project",
+        "dependencies": {
+          "BucketBus.Core": "[1.0.0, )",
+          "Tmds.DBus": "[0.95.1, 0.95.1]"
+        }
+      },
       "bucketbus.s3": {
         "type": "Project",
         "dependencies": {
@@ -181,6 +188,12 @@
         "dependencies": {
           "AWSSDK.Core": "[4.0.102.12, 5.0.0)"
         }
+      },
+      "Tmds.DBus": {
+        "type": "CentralTransitive",
+        "requested": "[0.95.1, 0.95.1]",
+        "resolved": "0.95.1",
+        "contentHash": "2mLo+choDFkVlpYN1dcAmFESclH/LoMGg4whvvV4RFM9xbBniRwqNb0/Fe3/z4RCzXSQi+Gb6SzM2c19WcoP3Q=="
       }
     }
   }

@@ -20,6 +20,11 @@ public static class CompositionRoot
             configureLogging?.Invoke(logging);
         });
         services.AddSingleton<MainWindowViewModel>();
+        services.AddSingleton<ITransferFiles, TransferFiles>();
+        services.AddSingleton<IUploadQualification, UploadQualification>();
+        services.AddSingleton<IObjectTransferFactory, S3TransferFactory>();
+        services.AddSingleton<TransferCoordinator>();
+        services.AddSingleton<TransferViewModel>();
         services.AddSingleton<ILocalDirectoryBrowser, LocalDirectoryBrowser>();
         services.AddSingleton<LocalBrowserViewModel>();
         services.AddSingleton<IProfileStore>(_ => new JsonProfileStore(JsonProfileStore.DefaultDirectory));

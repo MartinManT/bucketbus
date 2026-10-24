@@ -50,3 +50,65 @@ BUCKETBUS_LIVE_CONFIG="$(pwd)/docs/internal/live.json" \
 HTTPS validation is normal; redirects are disabled. The harness bypasses environment proxies to reach the explicitly selected target directly. It uses the production adapter with GET/HEAD only, at most three physical sends / 30 seconds per operation, at most eight pages and twenty configured metadata keys, and a six-minute suite cancellation budget. It never downloads object bodies or mutates resources. A result file records fixed status categories without object keys, credentials, response bodies or raw exceptions. Missing optional coverage is explicitly reported; a successful test case does not mean every qualification scenario passed.
 
 Session 5 separately used authorized disposable write tooling to create pagination/exact-key fixtures, followed by this unchanged read-only suite and manifest-based cleanup. That tooling and its environment-specific manifest remain private. It is not an application transfer implementation or an automatic setup/cleanup hook in the read-only harness. Future write experiments need their own explicit opt-in, exact target, ownership manifest, bounded operations and recorded uncertain/cleanup outcomes. Laboratory authority does not authorize cluster, network or VM teardown.
+
+## Single-file write qualification
+
+Phase 1B.2 adds a **separate** `TransferQualificationTests` entry point. The read-only
+harness above retains its original GET/HEAD transport and opt-in. Ordinary tests and
+`eng/validate-integration.sh` never run either live entry point.
+
+Only after approval of a disposable scope, create a private JSON configuration:
+
+```json
+{
+  "Connection": {
+    "Schema": 1,
+    "Endpoint": "https://storage.example.test",
+    "ApprovedEndpoint": "https://storage.example.test",
+    "Region": "us-east-1",
+    "Addressing": "Path",
+    "Bucket": "explicit-transfer-test-bucket",
+    "CredentialProfile": "explicit-selected-profile",
+    "DiscoverBuckets": false,
+    "MaximumPages": 1,
+    "HeadKeys": [],
+    "EvidenceFile": "/absolute/checkout/docs/internal/transfer-evidence.json"
+  },
+  "Prefix": "qualification/",
+  "ManifestFile": "/absolute/checkout/docs/internal/transfer-manifest.json",
+  "QualificationFile": "/absolute/checkout/docs/internal/upload-qualification.json"
+}
+```
+
+The example is fictional and conveys no live authorization. Independently supply
+both the approved HTTPS authority and exact bucket/prefix, before credentials or
+network access:
+
+```bash
+BUCKETBUS_RUN_WRITE_TESTS=1 \
+BUCKETBUS_APPROVED_ENDPOINT='https://storage.example.test' \
+BUCKETBUS_APPROVED_WRITE_SCOPE='explicit-transfer-test-bucket/qualification/' \
+BUCKETBUS_WRITE_CONFIG="$(pwd)/docs/internal/transfer-config.json" \
+  dotnet test BucketBus.Integration.slnx -c Release --no-build --no-restore \
+    --filter 'FullyQualifiedName~TransferQualificationTests'
+```
+
+This explicitly mutating test may create the approved dedicated bucket if absent.
+It uses the actual S3 transfer and native filesystem adapters for zero-byte, Unicode
+and random-content transfers, verifies exact bytes, tries a conflicting PUT with
+different bytes, verifies that the original object remains unchanged, tests download
+cancellation and a missing-object read. Fixture names are random beneath the approved
+prefix. The private manifest records intended keys/hashes before upload and actual
+operation identities before sending. Cleanup requires the recorded operation identity,
+full hash and matching ETag/version; unknown/mismatched objects are retained and the
+suite fails visibly. Confirmed deletion is followed by an absence check. The bucket
+is retained; no infrastructure is torn down. Keep manifests from each run for review.
+
+Only successful round-trip/collision checks produce the per-target upload qualification
+file. Copy that file to the application's per-user data directory as described in the
+README. It enables only that bucket and target fingerprint, expires in 30 days, and
+must be regenerated after provider configuration changes. It is local capability
+evidence, not a portable assertion of compatibility with all Ceph deployments.
+No credentials belong in these JSON files. A crash may leave manifest-owned fixtures;
+inspect them explicitly instead of blindly repeating cleanup. The five-minute live
+suite budget and bounded cleanup do not establish long-transfer/WAN performance.

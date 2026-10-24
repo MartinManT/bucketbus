@@ -98,3 +98,33 @@ public sealed class GuardTests
     private sealed class NeverSend : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => throw new Exception("Network attempted"); }
 }
+
+public sealed class WriteGuardTests
+{
+    [Theory]
+    [InlineData(null)] [InlineData("0")] [InlineData("true")]
+    public void Disabled_write_gate_has_zero_external_io(string? optIn) =>
+        Assert.Null(WriteGate.Load(optIn, "/invalid", "/invalid", _ => throw new Exception("I/O"), null, null));
+    [Theory]
+    [InlineData(null, "bucket/phase/")]
+    [InlineData("https://storage.example.test", null)]
+    [InlineData("http://storage.example.test", "bucket/phase/")]
+    public void Missing_independent_write_approval_stops_before_configuration(string? endpoint, string? scope)
+    {
+        var reads = 0;
+        Assert.ThrowsAny<Exception>(() => WriteGate.Load("1", "/invalid", "/invalid", _ => { reads++; return ""; }, endpoint, scope));
+        Assert.Equal(0, reads);
+    }
+    [Theory]
+    [InlineData("https://other.example.test", "bucket", "phase/")]
+    [InlineData("https://storage.example.test", "other", "phase/")]
+    [InlineData("https://storage.example.test", "bucket", "elsewhere/")]
+    public void Changing_configuration_cannot_bypass_independent_target_and_scope(string endpoint, string bucket, string prefix)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "bucketbus-private-" + Guid.NewGuid());
+        var config = new WriteConfig(new(1, endpoint, endpoint, "us-east-1", "Path", bucket, "synthetic", false, 1, [], Path.Combine(root, "evidence.json")),
+            prefix, Path.Combine(root, "manifest.json"), Path.Combine(root, "qualification.json"));
+        Assert.ThrowsAny<Exception>(() => WriteGate.Load("1", Path.Combine(root, "config.json"), root, _ => System.Text.Json.JsonSerializer.Serialize(config),
+            "https://storage.example.test", "bucket/phase/"));
+    }
+}

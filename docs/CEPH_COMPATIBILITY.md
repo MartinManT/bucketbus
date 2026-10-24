@@ -113,3 +113,15 @@ Key compatibility tests: SigV4 signed payload/trailer modes; checksums with mult
 | AWS S3 / other Ceph deployments | NOT TESTED | Never inferred from this target |
 
 No administration, IAM, Dashboard or recovery compatibility is established. The laboratory infrastructure remains available for later development.
+
+## Phase 1B.2 single-file observation
+
+Application-adapter tests against one independently approved Squid 19.2.7 deployment
+passed zero-byte, Unicode-key and 2 MiB random-content round trips, full SHA-256
+read-back, conditional PUT collision rejection with original bytes preserved,
+download cancellation and missing-object handling. These are identified-deployment
+observations, not blanket Squid compatibility. Test-owned objects were removed with
+identity/content checks and confirmed absence; private manifests hold exact scopes.
+AWS, other builds/configurations, restricted identities, long WAN transfers and
+mid-PUT network disruption remain unqualified. Production uploads require matching
+current qualification evidence and never fall back to an unconditional PUT.

@@ -36,7 +36,7 @@ public sealed class BrowserViewTests
             var connect = view.FindControl<Button>("ConnectButton")!; Assert.True(connect.IsEffectivelyEnabled);
             connect.Focus(); Press(window, PhysicalKey.Space);
             await BrowserFixture.UntilAsync(() => f.Browser.State == BrowserState.Ready);
-            Assert.Equal("Ready · Read-only session", window.FindControl<TextBlock>("ShellStatus")!.Text);
+            Assert.Equal("Ready · Connected", window.FindControl<TextBlock>("ShellStatus")!.Text);
             var list = view.FindControl<ListBox>("ObjectList")!;
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); Assert.True(list.Focus()); Press(window, PhysicalKey.ArrowDown);
             Assert.Equal("folder/", f.Browser.SelectedRow!.Key);

@@ -85,3 +85,7 @@ All F01–F18 behaviors in the approved MVP scope must have traceable tests; rev
 There must be no unresolved critical/high security defect, no known silent corruption or destination-escape defect, and no failed ordinary restricted-bucket workflow on a claimed provider. Obtain the named validation environments before scheduling a public release.
 
 The network qualification must cover LAN and WAN/VPN: disconnection/reconnection, latency, loss, request timeouts, bounded retries/backoff, multipart cancellation/failed cleanup, VPN reachability changes, enterprise-CA trust, and limited-bandwidth long-running transfers. Exact impairment profiles and timeout values require engineering review; see [test strategy](TEST_STRATEGY.md). A transfer under 1 GB must not be assumed short-lived or immune to these failures.
+
+## Current pre-alpha transfer increment
+
+Phase 1B.2 provides one-file upload/download actions and keyboard equivalents, observable bytes/progress, cancellation and Completed/Failed/Cancelled/Outcome Unknown states. Uploads require qualified conditional creation and full read-back integrity; downloads refuse existing destinations and unsafe names. Local and remote browsing remain independent. No batch/multipart transfers or crash-recovery promise is exposed. The durable MVP requirements above remain binding for Phase 1C.

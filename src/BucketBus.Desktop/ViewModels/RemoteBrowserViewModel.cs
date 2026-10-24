@@ -33,6 +33,9 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     [ObservableProperty] private bool _isMetadataLoading;
     [ObservableProperty] private bool _metadataVisible;
     public bool IsBusy => State is BrowserState.Connecting or BrowserState.Loading;
+    public ConnectionProfile? ActiveProfile => _session?.Profile;
+    public string? ActiveBucket => _bucket;
+    public string ActivePrefix => _prefix;
     public bool IsConnected => _session is { IsInvalidated: false };
     public string Location => !IsConnected ? "Not connected" : _bucket is null ? "Buckets" : BrowserText.Display(_bucket + " / " + _prefix);
     public string PageSummary => _index < 0 ? "No page loaded" : $"Page {_firstPage + _index} · {Rows.Count} rows · {_pages.Count}/5 cached pages · Server order; not a whole-bucket total";

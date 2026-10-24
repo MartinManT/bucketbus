@@ -12,17 +12,19 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _profilesVisible;
     public ProfileManagementViewModel? Profiles { get; }
     public LocalBrowserViewModel? Local { get; }
+    public TransferViewModel? Transfers { get; }
     public RemoteBrowserViewModel? Browser { get; }
     public bool ProfilesVisible { get => _profilesVisible; private set => SetProperty(ref _profilesVisible, value); }
     public IAsyncRelayCommand ShowProfilesCommand { get; }
     public IRelayCommand CloseProfilesCommand { get; }
 
-    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, ProfileManagementViewModel? profiles = null, RemoteBrowserViewModel? browser = null, LocalBrowserViewModel? local = null)
+    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, ProfileManagementViewModel? profiles = null, RemoteBrowserViewModel? browser = null, LocalBrowserViewModel? local = null, TransferViewModel? transfers = null)
     {
         _logger = logger;
         Profiles = profiles;
         Browser = browser;
         Local = local;
+        Transfers = transfers;
         if (Browser is not null) Browser.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Browser.IsConnected)) OnPropertyChanged(nameof(StatusMessage)); };
         ShowProfilesCommand = new AsyncRelayCommand(async () =>
         {
@@ -46,7 +48,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public string StatusMessage => _status.Phase switch
     {
         InitializationPhase.Starting => "Starting BucketBus…",
-        InitializationPhase.Ready => Browser?.IsConnected == true ? "Ready · Read-only session" : "Ready · Not connected",
+        InitializationPhase.Ready => Browser?.IsConnected == true ? "Ready · Connected" : "Ready · Not connected",
         _ => "Startup failed · BB-STARTUP"
     };
 

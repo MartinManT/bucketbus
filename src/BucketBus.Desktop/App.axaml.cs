@@ -26,6 +26,7 @@ public partial class App : Application
             {
                 var completed = await DesktopShutdown.StopAsync(() =>
                 {
+                    viewModel.Transfers?.Dispose();
                     viewModel.Local?.Dispose();
                     viewModel.Browser?.Disconnect();
                     viewModel.Profiles?.CancelCommand.Execute(null);

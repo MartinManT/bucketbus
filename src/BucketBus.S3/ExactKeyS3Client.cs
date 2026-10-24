@@ -13,19 +13,25 @@ internal sealed class ExactKeyS3Client(AWSCredentials credentials, AmazonS3Confi
         // Ambient SDK client-side monitoring must not export exception messages or identities.
         if (pipeline.Handlers.Any(h => h is CSMCallAttemptHandler)) pipeline.RemoveHandler<CSMCallAttemptHandler>();
         if (pipeline.Handlers.Any(h => h is CSMCallEventHandler)) pipeline.RemoveHandler<CSMCallEventHandler>();
-        pipeline.AddHandlerBefore<Signer>(new LeadingSlashHeadHandler());
+        pipeline.AddHandlerBefore<Signer>(new LeadingSlashObjectHandler());
     }
 
-    private sealed class LeadingSlashHeadHandler : PipelineHandler
+    private sealed class LeadingSlashObjectHandler : PipelineHandler
     {
         public override Task<T> InvokeAsync<T>(IExecutionContext executionContext)
         {
             var request = executionContext.RequestContext.Request;
-            if (executionContext.RequestContext.OriginalRequest is GetObjectMetadataRequest { Key: { } key }
-                && key.StartsWith('/') && request.Endpoint.AbsolutePath != "/")
+            var key = executionContext.RequestContext.OriginalRequest switch
+            {
+                GetObjectMetadataRequest head => head.Key,
+                GetObjectRequest get => get.Key,
+                PutObjectRequest put => put.Key,
+                _ => null
+            };
+            if (key is not null && key.StartsWith('/') && request.Endpoint.AbsolutePath != "/")
             {
                 // AWSSDK.Core 4.0.102.12 ComposeUrl omits the separator when a resolved
-                // resource begins with '/'. For path-style HEAD, put the bucket path in
+                // resource begins with '/'. For path-style HEAD/GET/PUT, put the bucket path in
                 // the resource template before signing. The SDK still encodes and signs
                 // the unchanged key; the endpoint now ends in '/', preserving both slashes.
                 // Idempotent across retries; only the proven affected request shape changes.

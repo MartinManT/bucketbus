@@ -28,6 +28,7 @@ public partial class MainWindow : Window
         {
             if (DataContext is MainWindowViewModel vm)
             {
+                vm.Transfers?.Dispose();
                 vm.Local?.Dispose();
                 vm.Browser?.Disconnect();
                 vm.Profiles?.CancelCommand.Execute(null);
@@ -50,7 +51,13 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainWindowViewModel { ProfilesVisible: true } && e.KeyModifiers == KeyModifiers.Control)
         {
-            if (e.Key == Key.Tab)
+            if (e.Key is Key.U or Key.D && DataContext is MainWindowViewModel { Transfers: { } transfers })
+            {
+                var command = e.Key == Key.U ? transfers.UploadCommand : transfers.DownloadCommand;
+                if (command.CanExecute(null)) command.Execute(null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Tab)
             {
                 if (LocalPane.IsKeyboardFocusWithin)
                 {
