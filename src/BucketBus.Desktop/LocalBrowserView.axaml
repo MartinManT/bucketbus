@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BucketBus.Desktop.ViewModels"
+             x:Class="BucketBus.Desktop.LocalBrowserView" x:DataType="vm:LocalBrowserViewModel">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="6">
+    <WrapPanel>
+      <Button Content="Home" Command="{Binding HomeCommand}" Margin="0,0,6,0" />
+      <Button Content="Up" Command="{Binding UpCommand}" Margin="0,0,6,0" />
+      <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,6,0" />
+      <Button Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,6,0" />
+      <ComboBox x:Name="Roots" ItemsSource="{Binding Roots}" PlaceholderText="Roots" MinWidth="90"
+                AutomationProperties.Name="Filesystem roots" />
+    </WrapPanel>
+    <StackPanel Grid.Row="1" Spacing="4">
+      <ProgressBar x:Name="LocalProgress" Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy}" AutomationProperties.Name="Loading local directory" />
+      <TextBlock x:Name="LocalStatus" Text="{Binding Status}" TextWrapping="Wrap" />
+    </StackPanel>
+    <Grid Grid.Row="2" ColumnDefinitions="*,75,115,80" ColumnSpacing="4">
+      <Button Content="Name" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Name}" AutomationProperties.Name="Sort local files by name" Padding="4" />
+      <Button Grid.Column="1" Content="Size" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Size}" Padding="4" />
+      <Button Grid.Column="2" Content="Modified" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Modified}" Padding="4" />
+      <Button Grid.Column="3" Content="Type" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Type}" Padding="4" />
+    </Grid>
+    <ListBox Grid.Row="3" x:Name="LocalList" ItemsSource="{Binding Rows}" SelectedItems="{Binding SelectedRows, Mode=OneWay}"
+             SelectionMode="Multiple" MinHeight="80" Focusable="True"
+             AutomationProperties.Name="Local directories, files and links" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+      <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListBox.Styles>
+      <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:LocalRow">
+          <Grid ColumnDefinitions="*,75,115,80" ColumnSpacing="4" ToolTip.Tip="{Binding Identity}">
+            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MinWidth="70" />
+            <TextBlock Grid.Column="1" Text="{Binding SizeText}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="3" Text="{Binding Type}" TextTrimming="CharacterEllipsis" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <StackPanel Grid.Row="4" Spacing="3">
+      <TextBlock Text="{Binding ListingSummary}" TextWrapping="Wrap" FontSize="11" />
+      <TextBlock Text="{Binding SortSummary}" TextWrapping="Wrap" FontSize="11" />
+      <TextBlock Text="{Binding SelectionSummary}" FontSize="11" ToolTip.Tip="Links are followed only when explicitly opened. File contents are never opened." />
+    </StackPanel>
+  </Grid>
+</UserControl>

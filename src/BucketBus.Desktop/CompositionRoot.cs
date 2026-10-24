@@ -20,6 +20,8 @@ public static class CompositionRoot
             configureLogging?.Invoke(logging);
         });
         services.AddSingleton<MainWindowViewModel>();
+        services.AddSingleton<ILocalDirectoryBrowser, LocalDirectoryBrowser>();
+        services.AddSingleton<LocalBrowserViewModel>();
         services.AddSingleton<IProfileStore>(_ => new JsonProfileStore(JsonProfileStore.DefaultDirectory));
         services.AddSingleton<SessionCredentialStore>();
         services.AddSingleton<ICredentialStore>(_ => OperatingSystem.IsWindows()

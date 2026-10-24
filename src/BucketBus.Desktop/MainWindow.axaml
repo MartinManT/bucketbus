@@ -34,21 +34,13 @@
     <Grid Grid.Row="2" ColumnDefinitions="*,12,*" IsVisible="{Binding !ProfilesVisible}">
       <Border x:Name="LocalPane" Classes="pane" Padding="16" MinWidth="280"
               AutomationProperties.Name="Local files pane">
-        <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="12">
-          <TextBlock Text="LOCAL" FontWeight="SemiBold" />
-          <TextBox x:Name="LocalLocation" Grid.Row="1" IsReadOnly="True" Text="No folder selected"
-                   AutomationProperties.Name="Local location" TabIndex="0" />
-          <Grid Grid.Row="2" ColumnDefinitions="*,70,100">
-            <TextBlock Classes="secondary" Text="Name" />
-            <TextBlock Grid.Column="1" Classes="secondary" Text="Size" />
-            <TextBlock Grid.Column="2" Classes="secondary" Text="Modified" />
-          </Grid>
-          <Border x:Name="LocalContent" Grid.Row="3" Focusable="True" TabIndex="1"
-                  AutomationProperties.Name="Local files, no folder selected">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
-              <TextBlock Text="No folder selected" FontWeight="SemiBold" HorizontalAlignment="Center" />
-              <TextBlock Classes="secondary" Text="Local browsing is not implemented yet." />
-            </StackPanel>
+        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+          <TextBlock Text="LOCAL · READ ONLY" FontWeight="SemiBold" />
+          <TextBox x:Name="LocalLocation" Grid.Row="1" Text="{Binding Local.PathInput}"
+                   PlaceholderText="Absolute directory path" ToolTip.Tip="Enter an absolute directory path and press Enter." AutomationProperties.Name="Local location" TabIndex="0" />
+          <Border x:Name="LocalContent" Grid.Row="2" Focusable="True" TabIndex="1"
+                  AutomationProperties.Name="Local filesystem browser">
+            <local:LocalBrowserView x:Name="LocalView" DataContext="{Binding Local}" />
           </Border>
         </Grid>
       </Border>

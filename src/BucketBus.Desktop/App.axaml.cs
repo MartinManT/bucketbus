@@ -26,6 +26,7 @@ public partial class App : Application
             {
                 var completed = await DesktopShutdown.StopAsync(() =>
                 {
+                    viewModel.Local?.Dispose();
                     viewModel.Browser?.Disconnect();
                     viewModel.Profiles?.CancelCommand.Execute(null);
                 }, services.DisposeAsync, TimeSpan.FromSeconds(5));
@@ -37,7 +38,8 @@ public partial class App : Application
             desktop.MainWindow.Opened += async (_, _) =>
             {
                 viewModel.CompleteInitialization();
-                if (viewModel.Browser is not null) await viewModel.Browser.ReloadProfilesAsync();
+                await Task.WhenAll(viewModel.Local?.InitializeAsync() ?? Task.CompletedTask,
+                    viewModel.Browser?.ReloadProfilesAsync() ?? Task.CompletedTask);
             };
             // Normal close awaits cleanup before the final window closes. External/forced exit
             // still requests cancellation, but must never synchronously wait on the UI thread.

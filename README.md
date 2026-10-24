@@ -2,7 +2,7 @@
 
 A cross-platform, Commander-style S3 file manager, with Ceph RGW as the initial validation target.
 
-Development is at **Phase 1A, Session 6**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. Local browsing and transfers remain placeholders. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+Development is at **Phase 1B.1: read-only local and S3 browsing**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links; transfers remain placeholders. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
 
 ## Build and test
 
@@ -24,7 +24,19 @@ To run on a graphical desktop:
 dotnet run --project src/BucketBus.Desktop --configuration Release --no-build
 ```
 
-The shell supports Tab/Shift+Tab focus traversal, Ctrl+Tab to switch panes and Ctrl+L to focus the active pane's read-only location. In the remote list, use arrows to select, Enter to open a bucket/prefix, Backspace to go up, Alt+Enter for properties and Ctrl+R to refresh. Bucket/prefix inputs accept Enter to navigate. Backspace in text inputs edits text. Native desktop execution requires an available display and Avalonia's platform prerequisites; see [supported platforms](https://docs.avaloniaui.net/docs/supported-platforms).
+The shell supports Tab/Shift+Tab focus traversal, Ctrl+Tab to switch panes and Ctrl+L to focus the active pane's location field. In the remote list, use arrows to select, Enter to open a bucket/prefix, Backspace to go up, Alt+Enter for properties and Ctrl+R to refresh. Bucket/prefix inputs accept Enter to navigate. Backspace in text inputs edits text. Native desktop execution requires an available display and Avalonia's platform prerequisites; see [supported platforms](https://docs.avaloniaui.net/docs/supported-platforms).
+
+On Windows, build from PowerShell with the pinned SDK before launching:
+
+```powershell
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+$env:AVALONIA_TELEMETRY_OPTOUT = '1'
+$env:TESTINGPLATFORM_TELEMETRY_OPTOUT = '1'
+$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+dotnet restore BucketBus.slnx --locked-mode
+dotnet build BucketBus.slnx -c Release --no-restore
+dotnet run --project src/BucketBus.Desktop -c Release --no-build --no-restore
+```
 
 ## Structure
 
@@ -44,3 +56,39 @@ Environment configuration and raw local evidence belong under ignored `docs/inte
 To construct the unsigned Windows evaluation ZIP on Fedora with the exact pinned SDK and Python 3, run `./eng/publish-windows.sh`. The output, checksum and size manifest are under ignored `artifacts/session6/`. No Windows machine, live S3 access or credential store is used by publishing. Distribute the complete ZIP with its notices and follow the Windows checklist; a cross-build is not proof of native compatibility.
 
 Licensed under [Apache License 2.0](LICENSE). Dependencies retain their own licenses; redistribution notices and dependency review are recorded with the implementation evidence.
+
+## Local filesystem browser
+
+The left pane starts at your home directory on actual application startup. Enter an
+absolute path and press Enter, use Home/Up or select a filesystem root (Windows
+logical drives or Linux `/`). Double-click or Enter opens a selected directory;
+Backspace goes up when the list has focus. Ctrl+R refreshes the active pane,
+Ctrl+L edits its path, and Ctrl+Tab switches panes. Ctrl/Shift selection and Ctrl+A
+apply to visible loaded entries. Column headings sort by name, size, modified time
+or type; repeating the heading reverses the sort. Refresh preserves exact selected
+paths when still present.
+
+Browsing reads metadata only. Hidden files are included. Links are labelled and
+only directory links opened explicitly are followed; no recursive scan occurs.
+Broken links stay visible, and disappearing entries show unavailable metadata.
+Names retain their native identities; unsafe display characters are escaped.
+Paths must be absolute without `.`/`..` segments; use Up for parent navigation.
+
+A listing retains at most 10,000 entries. Larger directories show an explicit partial
+listing notice: sorting/selection cover that subset, not the entire directory.
+No automatic continuation or whole-directory total is implied. Cancel responds
+without waiting for a stalled OS filesystem call; subsequent reads may wait for
+that one worker to return. Design-time construction and ordinary tests never browse
+your home directory. Native Windows/Fedora keyboard, drive, DPI and accessibility
+qualification remains pending; previous Phase 1A native gates remain open.
+
+Manual smoke test on a graphical desktop:
+
+1. Launch, navigate Home → subdirectory → Up; enter a Unicode path and select a root.
+2. Refresh, sort each column and use Ctrl/Shift/Ctrl+A selection. Confirm hidden
+   entries, links, empty folders and inaccessible/missing paths have clear states.
+3. Use Ctrl+Tab/Ctrl+L/Enter/Backspace/Ctrl+R; Backspace in the path edits text.
+4. With an independently authorized read-only S3 connection, navigate each pane and
+   refresh the other. Confirm their locations and selections stay independent.
+5. Cancel a slow listing and close during loading. Check normal laptop sizing,
+   scaling, removable drives and native screen-reader behavior manually.

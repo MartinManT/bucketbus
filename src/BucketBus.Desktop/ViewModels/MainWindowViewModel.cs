@@ -11,16 +11,18 @@ public sealed class MainWindowViewModel : ObservableObject
     private InitializationStatus _status = InitializationStatus.Starting;
     private bool _profilesVisible;
     public ProfileManagementViewModel? Profiles { get; }
+    public LocalBrowserViewModel? Local { get; }
     public RemoteBrowserViewModel? Browser { get; }
     public bool ProfilesVisible { get => _profilesVisible; private set => SetProperty(ref _profilesVisible, value); }
     public IAsyncRelayCommand ShowProfilesCommand { get; }
     public IRelayCommand CloseProfilesCommand { get; }
 
-    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, ProfileManagementViewModel? profiles = null, RemoteBrowserViewModel? browser = null)
+    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, ProfileManagementViewModel? profiles = null, RemoteBrowserViewModel? browser = null, LocalBrowserViewModel? local = null)
     {
         _logger = logger;
         Profiles = profiles;
         Browser = browser;
+        Local = local;
         if (Browser is not null) Browser.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Browser.IsConnected)) OnPropertyChanged(nameof(StatusMessage)); };
         ShowProfilesCommand = new AsyncRelayCommand(async () =>
         {

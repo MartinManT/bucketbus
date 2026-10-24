@@ -111,7 +111,7 @@ public sealed class ShellTests
     }
 
     [AvaloniaFact]
-    public void Panes_have_accessible_names_and_read_only_locations()
+    public void Panes_have_accessible_names_and_editable_local_location()
     {
         var window = new MainWindow { DataContext = DesignData.Preview };
         try
@@ -119,7 +119,7 @@ public sealed class ShellTests
             window.Show();
             Assert.Equal("Local files pane", AutomationProperties.GetName(window.FindControl<Border>("LocalPane")!));
             Assert.Equal("Remote storage pane", AutomationProperties.GetName(window.FindControl<Border>("RemotePane")!));
-            Assert.True(window.FindControl<TextBox>("LocalLocation")!.IsReadOnly);
+            Assert.False(window.FindControl<TextBox>("LocalLocation")!.IsReadOnly);
             Assert.True(window.FindControl<TextBox>("RemoteLocation")!.IsReadOnly);
         }
         finally { window.Close(); }

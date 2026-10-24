@@ -12,7 +12,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Opened += (_, _) => LocalContent.Focus();
+        Opened += (_, _) => FocusLocal();
         Closing += async (_, e) =>
         {
             if (ShutdownAsync is null || _shutdownComplete) return;
@@ -28,10 +28,22 @@ public partial class MainWindow : Window
         {
             if (DataContext is MainWindowViewModel vm)
             {
+                vm.Local?.Dispose();
                 vm.Browser?.Disconnect();
                 vm.Profiles?.CancelCommand.Execute(null);
             }
         };
+    }
+
+    private void FocusLocal()
+    {
+        if (DataContext is MainWindowViewModel { Local: not null }) LocalView.FindControl<ListBox>("LocalList")?.Focus();
+        else LocalContent.Focus();
+    }
+    private async Task NavigateLocalPathAsync(CommunityToolkit.Mvvm.Input.IAsyncRelayCommand command)
+    {
+        await command.ExecuteAsync(null);
+        if (LocalLocation.IsKeyboardFocusWithin) FocusLocal();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -47,7 +59,7 @@ public partial class MainWindow : Window
                     else RemoteContent.Focus();
                 }
                 else
-                    LocalContent.Focus();
+                    FocusLocal();
                 e.Handled = true;
             }
             else if (e.Key == Key.R && RemotePane.IsKeyboardFocusWithin && DataContext is MainWindowViewModel { Browser: { } browser }
@@ -65,6 +77,12 @@ public partial class MainWindow : Window
             }
         }
 
+        if (!e.Handled && DataContext is MainWindowViewModel { Local: { } local }
+            && LocalLocation.IsKeyboardFocusWithin && e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
+        { _ = NavigateLocalPathAsync(local.GoCommand); e.Handled = true; }
+        else if (!e.Handled && DataContext is MainWindowViewModel { Local: { } pane } && LocalPane.IsKeyboardFocusWithin
+            && e.Key == Key.R && e.KeyModifiers == KeyModifiers.Control && pane.RefreshCommand.CanExecute(null))
+        { _ = LocalView.NavigateAndKeepFocusAsync(pane.RefreshCommand); e.Handled = true; }
         base.OnKeyDown(e);
     }
 }
