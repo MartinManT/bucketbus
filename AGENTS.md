@@ -1,0 +1,11 @@
+# BucketBus working rules
+
+- Read `docs/PHASE1A_PLAN.md` and the relevant architecture/security requirements before changing behavior.
+- The approved implementation scope is Sessions 1–6 (T01–T12). Session 5 authorized opt-in live qualification and controlled fixture mutations in the disposable laboratory. Session 6 authorizes Windows packaging and native qualification if an authorized VM is available; the user confirms that VM is not yet available, so native gates remain BLOCKED. The shipped application remains read-only. Do not advance to Phase 1B, transfers, SQLite, infrastructure provisioning or final cluster/network/VM teardown without explicit authorization.
+- Keep four production modules and one process. Core has no Avalonia/AWS dependencies. S3 and Platform depend on Core. Only Desktop's composition root constructs services; view models do not locate services or call SDK clients.
+- Use exact central package versions and lockfiles. Validate dependency changes through restore, build, tests and NuGet audit. Do not suppress audit failures or introduce unrelated frameworks.
+- Keep design-time and ordinary tests offline. Ordinary tests must not contact the lab or read AWS CLI credentials. Session 5 live tooling may read only the explicitly selected literal shared-credentials profile after opt-in/configuration guards; never modify credential files or use ambient fallback. Native vault tests require explicit opt-in, a suitable user session, disposable application-owned entries and cleanup.
+- Keep local configuration/evidence under ignored `docs/internal/`; never store secret values there or elsewhere in the repository. Logs use allowlisted messages and must not include raw exceptions or provider data.
+- Validation: `./eng/validate.sh` opts out of build/test telemetry and runs locked restore, Release build and tests. Manual builds must set the same documented telemetry opt-outs.
+- Tests: `dotnet test BucketBus.slnx -c Release --no-build --no-restore`. Headless results do not establish Windows/native desktop compatibility.
+- Do not commit, push, provision resources or perform destructive live operations without explicit user approval.

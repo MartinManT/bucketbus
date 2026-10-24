@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BucketBus.Core/BucketBus.Core.csproj" />
+    <Project Path="src/BucketBus.Desktop/BucketBus.Desktop.csproj" />
+    <Project Path="src/BucketBus.Platform/BucketBus.Platform.csproj" />
+    <Project Path="src/BucketBus.S3/BucketBus.S3.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BucketBus.Core.Tests/BucketBus.Core.Tests.csproj" />
+    <Project Path="tests/BucketBus.Desktop.Tests/BucketBus.Desktop.Tests.csproj" />
+    <Project Path="tests/BucketBus.Platform.Tests/BucketBus.Platform.Tests.csproj" />
+    <Project Path="tests/BucketBus.S3.Tests/BucketBus.S3.Tests.csproj" />
+  </Folder>
+</Solution>

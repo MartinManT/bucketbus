@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../BucketBus.Core/BucketBus.Core.csproj" />
+    <PackageReference Include="AWSSDK.S3" />
+  </ItemGroup>
+</Project>

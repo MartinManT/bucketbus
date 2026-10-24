@@ -1,0 +1,89 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:BucketBus.Desktop.ViewModels"
+        xmlns:design="using:BucketBus.Desktop.Design"
+        xmlns:local="using:BucketBus.Desktop"
+        x:Class="BucketBus.Desktop.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="BucketBus" Width="1180" Height="760" MinWidth="850" MinHeight="680"
+        Design.DataContext="{x:Static design:DesignData.Preview}">
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="16" RowSpacing="8">
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="3">
+        <TextBlock Text="BucketBus" FontSize="26" FontWeight="SemiBold" />
+        <TextBlock Classes="secondary" Text="Local files and S3 storage" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <Button Content="Profiles" Command="{Binding ShowProfilesCommand}" />
+        <TextBlock Text="Read-only browser" />
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Spacing="8">
+      <ProgressBar x:Name="StartupProgress" Height="3" IsIndeterminate="True"
+                   IsVisible="{Binding IsLoading}" AutomationProperties.Name="Starting BucketBus" />
+      <Border x:Name="StartupError" IsVisible="{Binding HasError}" Padding="12" CornerRadius="4"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1">
+        <StackPanel Spacing="4">
+          <TextBlock Text="BucketBus could not finish starting." FontWeight="SemiBold" />
+          <TextBlock Text="Close the application and try again. Error code: BB-STARTUP." TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,12,*" IsVisible="{Binding !ProfilesVisible}">
+      <Border x:Name="LocalPane" Classes="pane" Padding="16" MinWidth="280"
+              AutomationProperties.Name="Local files pane">
+        <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="12">
+          <TextBlock Text="LOCAL" FontWeight="SemiBold" />
+          <TextBox x:Name="LocalLocation" Grid.Row="1" IsReadOnly="True" Text="No folder selected"
+                   AutomationProperties.Name="Local location" TabIndex="0" />
+          <Grid Grid.Row="2" ColumnDefinitions="*,70,100">
+            <TextBlock Classes="secondary" Text="Name" />
+            <TextBlock Grid.Column="1" Classes="secondary" Text="Size" />
+            <TextBlock Grid.Column="2" Classes="secondary" Text="Modified" />
+          </Grid>
+          <Border x:Name="LocalContent" Grid.Row="3" Focusable="True" TabIndex="1"
+                  AutomationProperties.Name="Local files, no folder selected">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+              <TextBlock Text="No folder selected" FontWeight="SemiBold" HorizontalAlignment="Center" />
+              <TextBlock Classes="secondary" Text="Local browsing is not implemented yet." />
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch"
+                    AutomationProperties.Name="Resize file panes" TabIndex="2" />
+      <Border x:Name="RemotePane" Grid.Column="2" Classes="pane" Padding="16" MinWidth="280"
+              AutomationProperties.Name="Remote storage pane">
+        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+          <TextBlock Text="REMOTE · READ ONLY" FontWeight="SemiBold" />
+          <TextBox x:Name="RemoteLocation" Grid.Row="1" IsReadOnly="True" Text="{Binding Browser.Location}"
+                   AutomationProperties.Name="Remote location" TabIndex="3" />
+          <Border x:Name="RemoteContent" Grid.Row="2" Focusable="True" TabIndex="4"
+                  AutomationProperties.Name="Remote storage browser">
+            <local:RemoteBrowserView x:Name="BrowserView" DataContext="{Binding Browser}" />
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Grid Grid.Row="2" IsVisible="{Binding ProfilesVisible}" RowDefinitions="Auto,*" RowSpacing="8">
+      <Button Content="Back to panes" Command="{Binding CloseProfilesCommand}" />
+      <local:ProfileManagementView Grid.Row="1" DataContext="{Binding Profiles}" />
+    </Grid>
+
+    <Border Grid.Row="3" Padding="16" CornerRadius="6" BorderThickness="1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+      <StackPanel Spacing="6">
+        <TextBlock Text="Transfers" FontWeight="SemiBold" />
+        <TextBlock Classes="secondary" Text="Transfers are not implemented. This browser is read-only." />
+      </StackPanel>
+    </Border>
+
+    <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
+      <TextBlock x:Name="ShellStatus" Classes="secondary" Text="{Binding StatusMessage}" />
+      <TextBlock Grid.Column="1" Classes="secondary" Text="Ctrl+Tab  Switch pane     Ctrl+L  Focus location" />
+    </Grid>
+  </Grid>
+</Window>

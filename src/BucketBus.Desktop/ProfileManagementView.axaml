@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BucketBus.Desktop.ViewModels" xmlns:core="using:BucketBus.Core"
+             x:Class="BucketBus.Desktop.ProfileManagementView" x:DataType="vm:ProfileManagementViewModel">
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+    <StackPanel Spacing="6">
+      <TextBlock Text="Connection profiles" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Text="Configure storage without connecting. HTTPS is required. Secrets are never stored in profile files."
+                 TextWrapping="Wrap" />
+      <ProgressBar x:Name="ProfileProgress" IsVisible="{Binding IsBusy}" IsIndeterminate="True" Height="3" />
+    </StackPanel>
+    <Grid Grid.Row="1" ColumnDefinitions="220,16,*" IsEnabled="{Binding !IsBusy}">
+      <Grid RowDefinitions="*,Auto" RowSpacing="8">
+        <ListBox x:Name="ProfileList" ItemsSource="{Binding Profiles}" SelectedItem="{Binding Selected}"
+                 AutomationProperties.Name="Saved connection profiles">
+          <ListBox.ItemTemplate><DataTemplate x:DataType="core:ConnectionProfile"><TextBlock Text="{Binding Settings.Name}" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+          <Button Content="New" Command="{Binding NewCommand}" />
+          <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+        </StackPanel>
+      </Grid>
+      <ScrollViewer Grid.Column="2">
+        <StackPanel Spacing="8" Margin="0,0,16,8">
+          <TextBox x:Name="ProfileNameEditor" Text="{Binding ProfileName}" PlaceholderText="Profile name" AutomationProperties.Name="Profile name" />
+          <TextBox Text="{Binding Endpoint}" PlaceholderText="https://storage.example.com" AutomationProperties.Name="HTTPS endpoint" />
+          <TextBox Text="{Binding Region}" PlaceholderText="Region" AutomationProperties.Name="Signing region" />
+          <TextBlock Text="Addressing style" />
+          <ComboBox ItemsSource="{Binding AddressingChoices}" SelectedItem="{Binding Addressing}" AutomationProperties.Name="Addressing style" />
+          <TextBox Text="{Binding Bucket}" PlaceholderText="Optional bucket" AutomationProperties.Name="Optional bucket" />
+          <TextBox Text="{Binding Prefix}" PlaceholderText="Optional exact prefix" AutomationProperties.Name="Optional exact prefix" />
+          <TextBlock Text="Credential storage" />
+          <ComboBox ItemsSource="{Binding CredentialChoices}" SelectedItem="{Binding CredentialChoice}" AutomationProperties.Name="Credential storage" />
+          <TextBlock Text="KeepExisting retains the binding only for the same target. Target changes detach it. SessionOnly lasts until exit; SecureStore uses your OS vault. Temporary tokens require SessionOnly."
+                     TextWrapping="Wrap" FontSize="12" />
+          <TextBox x:Name="AccessKeyEditor" Text="{Binding AccessKey}" PasswordChar="●" PlaceholderText="Access key (for explicit replacement)" AutomationProperties.Name="Access key" />
+          <TextBox x:Name="SecretKeyEditor" Text="{Binding SecretKey}" PasswordChar="●" PlaceholderText="Secret key" AutomationProperties.Name="Secret key" />
+          <TextBox x:Name="SessionTokenEditor" Text="{Binding SessionToken}" PasswordChar="●" PlaceholderText="Optional temporary session token" AutomationProperties.Name="Temporary session token" />
+          <CheckBox IsChecked="{Binding AllowUnlock}" Content="Allow OS unlock or approval prompts for this operation" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Content="Save profile" Command="{Binding SaveCommand}" Margin="0,0,8,8" />
+            <Button Content="Check saved credential" Command="{Binding CheckCredentialCommand}" Margin="0,0,8,8" />
+            <Button Content="Retry credential cleanup" Command="{Binding RetryCleanupCommand}" Margin="0,0,8,8" />
+          </WrapPanel>
+          <CheckBox IsChecked="{Binding ConfirmDelete}" Content="Confirm deletion of the selected profile and its credential binding" />
+          <Button Content="Delete profile" Command="{Binding DeleteCommand}" />
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+    <StackPanel Grid.Row="2" Spacing="8">
+      <TextBlock x:Name="ProfileStatus" Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.Name="Profile operation status" />
+      <Button Content="Cancel operation" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

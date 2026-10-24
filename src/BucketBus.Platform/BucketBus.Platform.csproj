@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Tmds.DBus" />
+    <ProjectReference Include="../BucketBus.Core/BucketBus.Core.csproj" />
+  </ItemGroup>
+</Project>

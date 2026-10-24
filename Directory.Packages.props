@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Tmds.DBus" Version="[0.95.1]" />
+    <PackageVersion Include="Avalonia" Version="[12.1.4]" />
+    <PackageVersion Include="Avalonia.Desktop" Version="[12.1.4]" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="[12.1.4]" />
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="[12.1.4]" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="[8.4.2]" />
+    <PackageVersion Include="AWSSDK.S3" Version="[4.0.104.5]" />
+    <PackageVersion Include="AWSSDK.Core" Version="[4.0.102.12]" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="[10.0.13]" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="[10.0.13]" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="[10.0.13]" />
+    <PackageVersion Include="xunit.v3" Version="[3.2.2]" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="[3.1.5]" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="[18.11.0]" />
+  </ItemGroup>
+</Project>

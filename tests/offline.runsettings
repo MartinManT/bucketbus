@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <DOTNET_CLI_TELEMETRY_OPTOUT>1</DOTNET_CLI_TELEMETRY_OPTOUT>
+      <AVALONIA_TELEMETRY_OPTOUT>1</AVALONIA_TELEMETRY_OPTOUT>
+      <TESTINGPLATFORM_TELEMETRY_OPTOUT>1</TESTINGPLATFORM_TELEMETRY_OPTOUT>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

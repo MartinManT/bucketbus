@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/BucketBus.S3/BucketBus.S3.csproj" />
+  </ItemGroup>
+</Project>

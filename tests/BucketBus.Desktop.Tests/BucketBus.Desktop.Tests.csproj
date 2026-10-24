@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/BucketBus.Desktop/BucketBus.Desktop.csproj" />
+    <PackageReference Include="Avalonia.Headless.XUnit" />
+  </ItemGroup>
+</Project>

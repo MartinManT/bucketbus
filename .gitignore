@@ -1,0 +1,37 @@
+# Public project documentation under docs/ is eligible for version control.
+# Private lab configuration, local context and test evidence stay local.
+/docs/internal/
+
+# Local development configuration
+.env
+.env.*
+!.env.example
+
+# Local AWS credential/configuration copies and per-user profile data
+.aws/
+/credentials
+/credentials.*
+/profiles.json
+/profiles.lock
+
+# Private key material, certificate bundles, diagnostics and crash dumps
+*.key
+*.pem
+*.p12
+*.pfx
+*.log
+*.dmp
+*.dump
+
+# .NET build and local validation output
+**/bin/
+**/obj/
+**/TestResults/
+/artifacts/
+*.user
+*.suo
+.vs/
+
+# Python packaging helper cache
+**/__pycache__/
+*.py[cod]
