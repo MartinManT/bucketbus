@@ -39,6 +39,9 @@ public sealed class TransferWorkflowTests
             await vm.UploadCommand.ExecutionTask!;
             Assert.Contains("Completed", vm.Status); Assert.Equal("other/", remote.Browser.ActivePrefix); Assert.EndsWith("other", local.DirectoryPath);
             Assert.Equal(100, vm.Percent); Assert.Equal("1 / 1 B", vm.Bytes);
+            var notice = window.FindControl<TextBlock>("UploadProviderNotice")!;
+            Assert.True(notice.IsVisible);
+            Assert.Contains("provider honoring create-only", notice.Text);
         }
         finally { window.Close(); }
     }
@@ -93,6 +96,21 @@ public sealed class TransferWorkflowTests
         var result = await coordinator.RunAsync(remote.Profiles.Snapshot.Profiles[0], "test-bucket", "key", "directory", false, false, null, TestContext.Current.CancellationToken);
         Assert.Equal(TransferState.Failed, result.State); Assert.Equal(TransferError.Conflict, result.Error); Assert.True(result.CleanupRequired);
         Assert.Contains("cleanup", TransferViewModel.Describe(result)); Assert.Equal(1, files.Cleanups);
+    }
+    [Theory]
+    [InlineData(TransferState.Failed, TransferError.Conflict, "Destination already exists")]
+    [InlineData(TransferState.Failed, TransferError.PermissionDenied, "Permission denied")]
+    [InlineData(TransferState.Failed, TransferError.AuthenticationFailed, "credentials or request signature")]
+    [InlineData(TransferState.Failed, TransferError.ConditionalWriteUnsupported, "does not support this conditional upload")]
+    [InlineData(TransferState.Failed, TransferError.RemoteRejected, "Provider rejected")]
+    [InlineData(TransferState.OutcomeUnknown, TransferError.NetworkFailure, "Outcome Unknown")]
+    public void Transfer_messages_distinguish_provider_rejections_and_unknown_writes(TransferState state, TransferError error, string expected)
+    {
+        var message = TransferViewModel.Describe(new(state, error));
+        Assert.Contains(expected, message);
+        Assert.DoesNotContain("qualification", message, StringComparison.OrdinalIgnoreCase);
+        if (error is TransferError.Conflict or TransferError.ConditionalWriteUnsupported)
+            Assert.Contains("No unconditional replacement was attempted", message);
     }
     private sealed class Files : ITransferFiles
     {

@@ -69,6 +69,7 @@
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <StackPanel Spacing="6">
         <TextBlock Text="Transfers" FontWeight="SemiBold" />
+        <TextBlock x:Name="UploadProviderNotice" Classes="secondary" Text="Upload collision protection depends on the provider honoring create-only requests." TextWrapping="Wrap" />
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button x:Name="UploadFile" Content="Upload file (Ctrl+U)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.UploadCommand}" />
           <Button x:Name="DownloadFile" Content="Download object (Ctrl+D)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.DownloadCommand}" />

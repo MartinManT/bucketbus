@@ -13,7 +13,7 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     private readonly RemoteBrowserViewModel _remote;
     private CancellationTokenSource? _operation;
     private bool _busy, _disposed;
-    private string _source = "", _destination = "", _status = "One file at a time. No overwrite, queue or crash recovery.", _bytes = "";
+    private string _source = "", _destination = "", _status = "One file at a time. Uploads request create-only; no queue or crash recovery.", _bytes = "";
     private double _percent;
     public bool IsBusy { get => _busy; private set { SetProperty(ref _busy, value); NotifyCommands(); } }
     public string Source { get => _source; private set => SetProperty(ref _source, value); }
@@ -87,8 +87,9 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
         };
         var reason = result.Error switch
         {
-            TransferError.Conflict => "Destination already exists or a conditional-write conflict occurred. Nothing was replaced.",
-            TransferError.UploadNotQualified => "Uploads blocked: this endpoint and bucket lack current create-only qualification evidence.",
+            TransferError.Conflict => "Destination already exists or a conditional-write conflict occurred. No unconditional replacement was attempted.",
+            TransferError.ConditionalWriteUnsupported => "Provider does not support this conditional upload request or a required upload header. No unconditional replacement was attempted.",
+            TransferError.AuthenticationFailed => "Provider rejected the credentials or request signature. Review the profile credentials and signing region.",
             TransferError.InvalidName => "Unsafe or unrepresentable filename/key; choose another object or directory.",
             TransferError.UnsupportedFilesystem => "This filesystem cannot provide the required safe commit.",
             TransferError.PermissionDenied => "Permission denied.", TransferError.DiskFull => "Insufficient disk space.",

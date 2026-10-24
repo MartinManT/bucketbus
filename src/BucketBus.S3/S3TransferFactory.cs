@@ -5,11 +5,11 @@ using BucketBus.Core;
 
 namespace BucketBus.S3;
 
-public sealed class S3TransferFactory(IUploadQualification qualification) : IObjectTransferFactory
+public sealed class S3TransferFactory : IObjectTransferFactory
 {
     public IObjectTransferSession Create(ConnectionProfile profile, Credentials credentials) =>
-        Create(profile, credentials, qualification, new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }, TimeSpan.FromHours(2));
-    internal static IObjectTransferSession Create(ConnectionProfile profile, Credentials credentials, IUploadQualification qualification,
+        Create(profile, credentials, new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }, TimeSpan.FromHours(2));
+    internal static IObjectTransferSession Create(ConnectionProfile profile, Credentials credentials,
         HttpMessageHandler handler, TimeSpan deadline)
     {
         profile = profile.Validate();
@@ -37,7 +37,7 @@ public sealed class S3TransferFactory(IUploadQualification qualification) : IObj
         AWSCredentials explicitCredentials = credentials.SessionToken is null
             ? new BasicAWSCredentials(credentials.AccessKey, credentials.SecretKey)
             : new SessionAWSCredentials(credentials.AccessKey, credentials.SecretKey, credentials.SessionToken);
-        try { return new S3TransferSession(profile, qualification, new ExactKeyS3Client(explicitCredentials, config), guard, owner, deadline); }
+        try { return new S3TransferSession(new ExactKeyS3Client(explicitCredentials, config), guard, owner, deadline); }
         catch { owner.Dispose(); throw; }
     }
     private sealed class ClientOwner(HttpMessageHandler guard) : HttpClientFactory, IDisposable

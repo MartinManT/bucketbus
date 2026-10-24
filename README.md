@@ -2,7 +2,7 @@
 
 A cross-platform, Commander-style S3 file manager, with Ceph RGW as the initial validation target.
 
-Development is at **Phase 1B.2: pre-alpha single-file transfers**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. One selected file can be uploaded create-only to a qualified target; one selected object can be downloaded without replacing local data. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+Development is at **Phase 1B.2: pre-alpha single-file transfers**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. One selected file can be uploaded with a create-only request; one selected object can be downloaded without replacing local data. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
 
 ## Build and test
 
@@ -112,16 +112,27 @@ permission and adds download traffic. A denied/lost verification response can le
 may also leave Outcome Unknown. Inspect the object before manually retrying;
 BucketBus never automatically retries or deletes an uncertain upload.
 
-Uploads are blocked until the exact endpoint/region/addressing/bucket has passed
-controlled live round-trip and collision qualification. The separate harness in
-[live qualification](docs/LIVE_QUALIFICATION.md#single-file-write-qualification)
-generates `upload-qualification.json` evidence. Copy the generated evidence (not
-hand-authored assertions) to the per-user BucketBus data directory: normally
-`~/.local/share/BucketBus/` on Linux (`XDG_DATA_HOME` respected), or
-`%LOCALAPPDATA%\BucketBus\` on Windows. Keep it out of Git; it contains target
-fingerprints and bucket identifiers, but no credentials. Evidence expires after
-30 days. Requalify sooner after any gateway build/configuration changes. Other
-endpoints/buckets remain blocked; one Squid test does not qualify every deployment.
+Create a profile, connect, select a local file and remote bucket/prefix, then choose
+Upload. The application uses the profile's explicit credentials immediately; no
+qualification file, external procedure or expiration is involved. The server decides
+whether those credentials have permission to write.
+
+**Provider compatibility:** collision protection requires the server to honor
+`If-None-Match: *`. Conforming providers return 412 for an existing object; a 409
+write conflict is also reported without automatic retry. A rejected conditional
+upload or required header is reported separately from permission/authentication
+failures and uncertain writes; BucketBus never retries with an unconditional PUT.
+Some providers return only a generic rejection, which cannot identify the unsupported
+header precisely. A provider that silently ignores the condition can overwrite an
+existing object. Neither a successful response nor SHA-256 read-back proves that no
+previous object was replaced. BucketBus cannot promise universal no-overwrite safety
+across S3-compatible providers. Use a provider with documented and tested conditional
+write support when protecting existing remote data. [AWS conditional PUT contract](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html)
+
+The independently opted-in [laboratory harness](docs/LIVE_QUALIFICATION.md#single-file-write-qualification)
+still requires approved targets/scopes and records private compatibility evidence.
+Those developer safeguards do not control normal application uploads; one tested
+Squid deployment does not establish compatibility with every S3-compatible service.
 
 Downloads use the selected object's last `/` component as a single local name.
 Unsafe/reserved names, traversal components, invalid Unicode and unrepresentable
@@ -147,8 +158,9 @@ accessibility still require the Windows VM; headless tests are not native proof.
 
 Manual check on Fedora or Windows:
 
-1. Build/run using the commands above, install generated qualification evidence,
-   and connect an explicit profile to its qualified bucket. Use only disposable data.
+1. Build/run using the commands above, connect an explicit profile and navigate to
+   an authorized bucket/prefix. Use disposable data on a provider that supports
+   conditional creation; no qualification-file installation is needed.
 2. Select a small local file, upload with Ctrl+U and inspect the Completed and
    SHA-256 verification text. Upload it again: expect Conflict, with original content intact.
 3. Navigate locally to a different empty directory, select the remote object and

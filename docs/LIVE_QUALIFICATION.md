@@ -76,7 +76,7 @@ Only after approval of a disposable scope, create a private JSON configuration:
   },
   "Prefix": "qualification/",
   "ManifestFile": "/absolute/checkout/docs/internal/transfer-manifest.json",
-  "QualificationFile": "/absolute/checkout/docs/internal/upload-qualification.json"
+  "QualificationFile": "/absolute/checkout/docs/internal/transfer-qualification-results.json"
 }
 ```
 
@@ -104,11 +104,12 @@ full hash and matching ETag/version; unknown/mismatched objects are retained and
 suite fails visibly. Confirmed deletion is followed by an absence check. The bucket
 is retained; no infrastructure is torn down. Keep manifests from each run for review.
 
-Only successful round-trip/collision checks produce the per-target upload qualification
-file. Copy that file to the application's per-user data directory as described in the
-README. It enables only that bucket and target fingerprint, expires in 30 days, and
-must be regenerated after provider configuration changes. It is local capability
-evidence, not a portable assertion of compatibility with all Ceph deployments.
+Successful round-trip/collision checks produce a private compatibility report at
+`QualificationFile` (the existing test-configuration field name). This is test evidence
+only: the application never reads or installs it, and it does not enable uploads or
+expire normal users' access. Retest after provider changes before making compatibility
+claims. The independent opt-in, endpoint/scope approvals and manifest guards above
+remain mandatory for every live run, regardless of prior test reports.
 No credentials belong in these JSON files. A crash may leave manifest-owned fixtures;
 inspect them explicitly instead of blindly repeating cleanup. The five-minute live
 suite budget and bounded cleanup do not establish long-transfer/WAN performance.

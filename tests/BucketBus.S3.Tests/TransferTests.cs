@@ -13,8 +13,8 @@ public sealed class TransferTests
         var s = new ProfileSettings("Fixture", "https://storage.example.test:9443", "test-region-1", AddressingStyle.Path);
         var id = Guid.NewGuid(); return new(id, 1, s, new(id, Guid.NewGuid(), CredentialStorage.Session, s.TargetFingerprint()));
     }
-    private static IObjectTransferSession Session(ScriptTransport transport, bool qualified = true, TimeSpan? deadline = null) =>
-        S3TransferFactory.Create(Profile(), new("SYNTHETICKEY", "synthetic-secret"), new Qualification(qualified), transport, deadline ?? TimeSpan.FromSeconds(5));
+    private static IObjectTransferSession Session(ScriptTransport transport, TimeSpan? deadline = null) =>
+        S3TransferFactory.Create(Profile(), new("SYNTHETICKEY", "synthetic-secret"), transport, deadline ?? TimeSpan.FromSeconds(5));
     private static HttpResponseMessage Object(byte[] bytes, string? operation = null, bool checksum = true)
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
@@ -25,7 +25,7 @@ public sealed class TransferTests
     }
     [Theory]
     [InlineData("", "é %+.txt")] [InlineData("hello", "é %+.txt")] [InlineData("leading", "/prefix//é %+.txt")]
-    public async Task Upload_uses_conditional_put_explicit_checksums_then_exact_content_readback(string content, string key)
+    public async Task Upload_without_qualification_evidence_sends_conditional_put_and_verifies_content(string content, string key)
     {
         var data = Encoding.UTF8.GetBytes(content); string? operation = null;
         using var source = new Source(data);
@@ -48,13 +48,30 @@ public sealed class TransferTests
         Assert.Equal(TransferState.Completed, result.State); Assert.Contains("SHA-256", result.Verification); Assert.Equal(2, transport.Attempts);
     }
     [Theory]
-    [InlineData(412)] [InlineData(409)] [InlineData(403)]
-    public async Task Confirmed_rejection_does_not_retry_or_reconcile(int status)
+    [InlineData(412, "PreconditionFailed", TransferError.Conflict)]
+    [InlineData(409, "ConditionalRequestConflict", TransferError.Conflict)]
+    [InlineData(403, "AccessDenied", TransferError.PermissionDenied)]
+    [InlineData(401, "Unauthorized", TransferError.AuthenticationFailed)]
+    [InlineData(403, "InvalidAccessKeyId", TransferError.AuthenticationFailed)]
+    [InlineData(403, "SignatureDoesNotMatch", TransferError.AuthenticationFailed)]
+    [InlineData(400, "ExpiredToken", TransferError.AuthenticationFailed)]
+    [InlineData(501, "NotImplemented", TransferError.ConditionalWriteUnsupported)]
+    [InlineData(405, "MethodNotAllowed", TransferError.ConditionalWriteUnsupported)]
+    [InlineData(400, "NotImplemented", TransferError.ConditionalWriteUnsupported)]
+    [InlineData(400, "InvalidRequest", TransferError.RemoteRejected)]
+    [InlineData(400, "InvalidArgument", TransferError.RemoteRejected)]
+    public async Task Confirmed_rejection_is_classified_without_retry_or_unconditional_fallback(int status, string code, TransferError expected)
     {
-        var transport = new ScriptTransport((_, _) => Task.FromResult(SdkFixture.Xml(SdkFixture.Error("Rejected"), (HttpStatusCode)status)));
+        var transport = new ScriptTransport((request, _) =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Equal("*", Assert.Single(request.Headers.GetValues("If-None-Match")));
+            return Task.FromResult(SdkFixture.Xml(SdkFixture.Error(code), (HttpStatusCode)status));
+        });
         await using var session = Session(transport); using var source = new Source(Data);
         var result = await session.UploadAsync("test-bucket", "key", source, null, TestContext.Current.CancellationToken);
-        Assert.Equal(TransferState.Failed, result.State); Assert.Equal(1, transport.Attempts);
+        Assert.Equal(TransferState.Failed, result.State); Assert.Equal(expected, result.Error); Assert.Equal(1, transport.Attempts);
+        Assert.DoesNotContain("synthetic-sensitive-server-detail", result.ToString());
     }
     [Fact]
     public async Task Lost_put_response_is_unknown_never_replayed_and_size_alone_cannot_reconcile()
@@ -93,15 +110,12 @@ public sealed class TransferTests
         Assert.Equal(TransferState.OutcomeUnknown, result.State); Assert.Equal(1, transport.Attempts);
     }
     [Fact]
-    public async Task Unqualified_upload_and_precancelled_download_do_not_send()
+    public async Task Precancelled_download_does_not_send()
     {
         var transport = new ScriptTransport((_, _) => throw new Exception("Must not send"));
-        await using var session = Session(transport, false); using var source = new Source(Data);
-        Assert.Equal(TransferError.UploadNotQualified, (await session.UploadAsync("test-bucket", "key", source, null, TestContext.Current.CancellationToken)).Error);
-        var transport2 = new ScriptTransport((_, _) => throw new Exception("Must not send"));
-        await using var session2 = Session(transport2); using var cancel = new CancellationTokenSource(); cancel.Cancel();
-        Assert.Equal(TransferState.Cancelled, (await session2.DownloadAsync("test-bucket", "key", Stream.Null, null, cancel.Token)).State);
-        Assert.Equal(0, transport.Attempts + transport2.Attempts);
+        await using var session = Session(transport); using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        Assert.Equal(TransferState.Cancelled, (await session.DownloadAsync("test-bucket", "key", Stream.Null, null, cancel.Token)).State);
+        Assert.Equal(0, transport.Attempts);
     }
     [Theory]
     [InlineData("/leading//é%+", true)] [InlineData("normal", false)]
@@ -227,7 +241,6 @@ public sealed class TransferTests
     }
     private sealed class FailingOutput(int code) : MemoryStream
     { public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken token = default) => throw (code == -1 ? new UnauthorizedAccessException("fixture") : new IOException("fixture", code)); }
-    private sealed class Qualification(bool allowed) : IUploadQualification { public bool Allows(ProfileSettings s, string b) => allowed; }
     private sealed class Source(byte[] bytes) : ITransferSource, IDisposable
     {
         public bool Changed { get; set; }

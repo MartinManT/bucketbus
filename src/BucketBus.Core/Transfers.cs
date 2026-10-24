@@ -5,7 +5,7 @@ public enum TransferError
 {
     None, Conflict, InvalidName, UnsupportedFilesystem, PermissionDenied, DiskFull, LocalFailure,
     IntegrityMismatch, SourceChanged, NetworkFailure, Timeout, CredentialsUnavailable, ProfileChanged,
-    UploadNotQualified, RemoteRejected, Busy, CleanupRequired
+    ConditionalWriteUnsupported, RemoteRejected, Busy, CleanupRequired, AuthenticationFailed
 }
 public sealed record TransferResult(TransferState State, TransferError Error = TransferError.None,
     string Verification = "", bool CleanupRequired = false);
@@ -13,8 +13,6 @@ public sealed record TransferProgress(long Bytes, long? Total, string Stage);
 public sealed class TransferException(TransferError error) : Exception("Transfer operation failed.")
 { public TransferError Error { get; } = error; }
 
-public interface IUploadQualification
-{ bool Allows(ProfileSettings settings, string bucket); }
 public interface ITransferSource : IAsyncDisposable
 {
     Stream Content { get; }

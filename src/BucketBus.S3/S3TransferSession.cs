@@ -6,14 +6,13 @@ using BucketBus.Core;
 
 namespace BucketBus.S3;
 
-internal sealed class S3TransferSession(ConnectionProfile profile, IUploadQualification qualification, AmazonS3Client client,
+internal sealed class S3TransferSession(AmazonS3Client client,
     TransferTransport transport, IDisposable owner, TimeSpan deadline) : IObjectTransferSession
 {
     private int _used;
     public async Task<TransferResult> UploadAsync(string bucket, string key, ITransferSource source, IProgress<TransferProgress>? progress, CancellationToken token)
     {
         if (Interlocked.Exchange(ref _used, 1) != 0) return new(TransferState.Failed, TransferError.Busy);
-        if (!qualification.Allows(profile.Settings, bucket)) return new(TransferState.Failed, TransferError.UploadNotQualified);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(deadline);
         var operation = Guid.NewGuid().ToString("N");
         var length = source.Length;
@@ -42,12 +41,12 @@ internal sealed class S3TransferSession(ConnectionProfile profile, IUploadQualif
             await source.ValidateAsync(ct).ConfigureAwait(false);
             progress?.Report(new(length, length, "Verifying remote content"));
             await VerifyUpload(bucket, key, operation, source.Sha256, length, ct).ConfigureAwait(false);
-            return new(TransferState.Completed, Verification: "Remote content read back and SHA-256 matched; create-only PUT acknowledged.");
+            return new(TransferState.Completed, Verification: "Remote content read back and SHA-256 matched; conditional PUT succeeded.");
         }
         catch (AmazonS3Exception e) when (!acknowledged && e.StatusCode is HttpStatusCode.PreconditionFailed or HttpStatusCode.Conflict)
         { return new(TransferState.Failed, TransferError.Conflict); }
         catch (AmazonS3Exception e) when (!acknowledged && (int)e.StatusCode is 400 or 401 or 403 or 404 or 405 or 411 or 413 or 501)
-        { return new(TransferState.Failed, TransferError.RemoteRejected); }
+        { return new(TransferState.Failed, RejectedUpload(e)); }
         catch (Exception e)
         {
             var error = Error(e, token, timeout.Token);
@@ -67,6 +66,19 @@ internal sealed class S3TransferSession(ConnectionProfile profile, IUploadQualif
             }
             return new(TransferState.OutcomeUnknown, error);
         }
+    }
+    private static TransferError RejectedUpload(AmazonS3Exception error)
+    {
+        // Classify only known rejection codes/statuses. Never display provider messages,
+        // guess which header InvalidRequest refers to, or retry without a precondition.
+        if (error.StatusCode == HttpStatusCode.Unauthorized
+            || error.ErrorCode is "InvalidAccessKeyId" or "SignatureDoesNotMatch" or "ExpiredToken" or "InvalidToken")
+            return TransferError.AuthenticationFailed;
+        if (error.StatusCode == HttpStatusCode.Forbidden) return TransferError.PermissionDenied;
+        if (error.StatusCode is HttpStatusCode.NotImplemented or HttpStatusCode.MethodNotAllowed
+            || error.ErrorCode == "NotImplemented")
+            return TransferError.ConditionalWriteUnsupported;
+        return TransferError.RemoteRejected;
     }
     private async Task VerifyUpload(string bucket, string key, string operation, string expectedHash, long length, CancellationToken token)
     {

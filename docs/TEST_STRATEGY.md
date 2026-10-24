@@ -153,6 +153,8 @@ Block release on silent data corruption, path escape, unapproved overwrite/delet
 
 ## Phase 1B.2 transfer coverage
 
+Offline uploads run without qualification evidence and distinguish collision, permission/authentication, unsupported-request and uncertain outcomes without unconditional retry. Live-test authorization remains confined to its guarded harness.
+
 Offline transfer tests exercise no-replace destination races, source replacement/
 modification, symlink refusal, zero-byte/Unicode data, short reads, checksum mismatch,
 streaming with a generated 32 MiB body and 64 KiB reads, disk-full failures,

@@ -40,9 +40,7 @@ public sealed class TransferQualificationTests
             var files = new TransferFiles();
             var bucket = config.Connection.Bucket;
             var run = config.Prefix + Guid.NewGuid().ToString("N") + "/";
-            // The qualification-only grant is bounded to the independently approved target and this bucket.
-            var grant = new Qualification(settings.TargetFingerprint(), bucket);
-            await using (var initializeLogging = S3TransferFactory.Create(profile, credentials, grant, new NeverSend(), TimeSpan.FromSeconds(1))) { }
+            await using (var initializeLogging = S3TransferFactory.Create(profile, credentials, new NeverSend(), TimeSpan.FromSeconds(1))) { }
             var fixtureGuard = new FixtureGuard(settings, bucket, owned, new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false });
             fixtureOwner = new FixtureOwner(fixtureGuard);
             AWSCredentials explicitCredentials = credentials.SessionToken is null ? new BasicAWSCredentials(credentials.AccessKey, credentials.SecretKey)
@@ -121,11 +119,12 @@ public sealed class TransferQualificationTests
                 outcomes["MissingObject"] = result.State.ToString();
                 if (result.State != TransferState.Failed) throw new InvalidOperationException();
             }
-            var evidence = new[] { new UploadQualificationEvidence(1, settings.TargetFingerprint(), bucket, DateTimeOffset.UtcNow, true, true) };
+            // Private test evidence only; the application never consumes this report.
+            var evidence = new[] { new TransferQualificationEvidence(1, settings.TargetFingerprint(), bucket, DateTimeOffset.UtcNow, true, true) };
             await File.WriteAllTextAsync(config.QualificationFile, JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }), token);
             outcomes["Qualification"] = "PASSED: configured target/bucket only";
 
-            IObjectTransferSession NewSession() => S3TransferFactory.Create(profile, credentials, grant,
+            IObjectTransferSession NewSession() => S3TransferFactory.Create(profile, credentials,
                 new TransferFixtureGuard(settings, bucket, run, operationIds, Save,
                     new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false }), TimeSpan.FromMinutes(2));
         }
@@ -192,8 +191,8 @@ public sealed class TransferQualificationTests
             return base.SendAsync(request, token);
         }
     }
-    private sealed class Qualification(string target, string bucket) : IUploadQualification
-    { public bool Allows(ProfileSettings settings, string b) => settings.TargetFingerprint() == target && b == bucket; }
+    private sealed record TransferQualificationEvidence(int Schema, string Target, string Bucket, DateTimeOffset VerifiedUtc,
+        bool ConditionalCollisionRejected, bool RoundTripSha256Verified);
     private sealed class NeverSend : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken c) => throw new InvalidOperationException(); }
     private sealed class CancelAfterWrite(CancellationTokenSource cancel) : MemoryStream

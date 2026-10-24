@@ -123,5 +123,8 @@ download cancellation and missing-object handling. These are identified-deployme
 observations, not blanket Squid compatibility. Test-owned objects were removed with
 identity/content checks and confirmed absence; private manifests hold exact scopes.
 AWS, other builds/configurations, restricted identities, long WAN transfers and
-mid-PUT network disruption remain unqualified. Production uploads require matching
-current qualification evidence and never fall back to an unconditional PUT.
+mid-PUT network disruption remain unqualified. Normal application uploads attempt
+conditional creation without installed qualification evidence. They never fall back
+to unconditional PUT. Collision protection depends on the provider enforcing the
+condition; a success response and matching read-back do not establish that an older
+object was never replaced. Laboratory qualification remains separately authorized.
