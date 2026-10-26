@@ -19,7 +19,7 @@ The [engineering review and Phase 1A plan](PHASE1A_PLAN.md) supplies concrete of
 
 Planning inputs: typical files under 1 GB, both LAN and WAN/VPN target networks, Squid (19.x) as the primary initial Ceph validation family, and Fedora/.NET 10 SDK/Docker as the development baseline. Typical size is not a maximum supported file-size limit. Package/build provenance, backports, configuration, permissions and test authority must be recorded for each qualification run. Windows 11 VM checks remain a Phase 1A prerequisite; AWS test access/budget and signing arrangements must also be resolved. Enterprise proxy use and TLS interception are not assumed; track them in Q09. Local provisioning details, credential-source identifiers and raw run evidence stay outside public documentation.
 
-ADR-006 is approved scope, not test evidence: persist queued/interrupted jobs, uncertain outcomes and known cleanup obligations; bound retries; retry multipart parts safely in-session; reconcile before confirmed whole-object restart after application restart. Cross-restart partial-byte resume is deferred to Phase 2. SQLite remains preferred and conditionally recommended by engineering review; selection approval and implementation validation remain open. Maximum file size, object counts and interruption frequency remain unmeasured (Q02).
+ADR-006 is approved scope, not test evidence: persist queued/interrupted jobs, uncertain outcomes and known cleanup obligations; bound retries; retry multipart parts safely in-session; reconcile before confirmed whole-object restart after application restart. Cross-restart partial-byte resume is deferred to Phase 2. SQLite selection is now explicitly approved; the Phase 1C.1 section records the implemented subset and remaining native/durability gates. Maximum file size, object counts and interruption frequency remain unmeasured (Q02).
 
 ## Live integration access and safety
 
@@ -164,3 +164,15 @@ terminal states, refresh and cancellation on close. Native Windows execution rem
 BLOCKED pending the VM. Live write qualification is separate from the read-only
 harness and requires independent endpoint and bucket/prefix approvals; see
 [LIVE_QUALIFICATION](LIVE_QUALIFICATION.md#single-file-write-qualification).
+
+## Phase 1C.1 executed durability coverage
+
+SQLite is explicitly approved and implemented for single-file records. Ordinary
+suites now include actual subprocess termination at SQLite transaction, synthetic
+PUT and native download/commit boundaries, plus fail-closed journal faults,
+corrupt/future schemas, concurrent owners, changed identities, offline recovery
+listing and explicit recovery restrictions. No live access is required. The
+publish scripts check the bundled Linux/Windows SQLite assets; Linux executes a
+native WAL/FULL smoke transaction, while Windows only inspects x64 PE architecture.
+See [executed results and untested durability limits](PHASE1C1_IMPLEMENTATION.md).
+Power-loss hardware behavior and native Windows execution remain open gates.

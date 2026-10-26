@@ -78,9 +78,12 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     public IRelayCommand PreviousCommand { get; }
     public IAsyncRelayCommand PropertiesCommand { get; }
 
-    public RemoteBrowserViewModel(ProfileManager profiles, ReadOnlySessionController controller)
+    private ObjectMetadata? _metadataValue;
+    public DisplayOptions Display { get; }
+    public RemoteBrowserViewModel(ProfileManager profiles, ReadOnlySessionController controller, DisplayOptions? display = null)
     {
         _profiles = profiles; _controller = controller;
+        Display = display ?? new(); Display.PropertyChanged += DisplayChanged;
         ReloadProfilesCommand = new AsyncRelayCommand(ReloadProfilesAsync);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => SelectedProfile is not null, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         DisconnectCommand = new RelayCommand(Disconnect);
@@ -148,6 +151,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     }
     private void ClearMetadata()
     {
+        _metadataValue = null;
         ++_metadataGeneration; _metadataOperation?.Cancel(); _metadataOperation = null;
         IsMetadataLoading = false; MetadataVisible = false;
         Metadata = "Select an object and choose Properties. Metadata is never fetched automatically.";
@@ -158,6 +162,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
         var old = _session; _session = null; old?.Invalidate();
         if (old is not null) _ = DisposeSessionAsync(old);
         ClearPages(); _bucket = null; _prefix = "";
+        OnPropertyChanged(nameof(ActivePrefix));
         State = BrowserState.Disconnected; Status = "Disconnected. Select a profile and choose Connect.";
         NotifyCommands();
     }
@@ -205,6 +210,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     private void PrepareListing(string? bucket, string prefix)
     {
         ClearPages(); _bucket = bucket; _prefix = bucket is null ? "" : prefix;
+        OnPropertyChanged(nameof(ActivePrefix));
         BucketInput = bucket ?? ""; PrefixInput = _prefix;
         if (bucket is null)
         {
@@ -307,10 +313,8 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
         {
             var result = await Task.Run(() => session.GetMetadataAsync(bucket, row.Key, cancellation.Token));
             if (!Current(navigation) || generation != _metadataGeneration || !ReferenceEquals(row, SelectedRow)) return;
-            Metadata = result.IsSuccess && result.Value is { } value
-                ? $"Key (Unicode escapes): {BrowserText.Display(value.Key, true)}\nSize: {value.Size?.ToString() ?? "Unknown"}\nModified: {value.Modified?.ToString("O") ?? "Unknown"}\nContent type: {BrowserText.Display(value.ContentType ?? "Unknown")}\nETag (opaque): {BrowserText.Display(value.ETag ?? "Unknown")}\nVersion: {BrowserText.Display(value.VersionId ?? "Unknown")}"
-                    + string.Concat(value.UserMetadata.Select(p => "\n" + BrowserText.Display(p.Key) + ": " + BrowserText.Display(p.Value)))
-                : BrowserText.Error(result.Error);
+            _metadataValue = result.IsSuccess ? result.Value : null;
+            Metadata = _metadataValue is { } value ? PresentMetadata(value) : BrowserText.Error(result.Error);
         }
         catch (OperationCanceledException) { if (Current(navigation) && generation == _metadataGeneration) Metadata = "Metadata request cancelled."; }
         catch (Exception) { if (Current(navigation) && generation == _metadataGeneration) Metadata = "Metadata request failed. Code BB-METADATA."; }
@@ -319,9 +323,15 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
             if (generation == _metadataGeneration) { _metadataOperation = null; IsMetadataLoading = false; }
         }
     }
+    private string PresentMetadata(ObjectMetadata value) =>
+        $"Key (Unicode escapes): {BrowserText.Display(value.Key, true)}\nSize: {ByteSizeFormatter.Format(value.Size, Display.Current.FileSizes)} (exact: {ByteSizeFormatter.Exact(value.Size)})\nModified: {value.Modified?.ToString("O") ?? "Unknown"}\nContent type: {BrowserText.Display(value.ContentType ?? "Unknown")}\nETag (opaque): {BrowserText.Display(value.ETag ?? "Unknown")}\nVersion: {BrowserText.Display(value.VersionId ?? "Unknown")}"
+        + string.Concat(value.UserMetadata.Select(p => "\n" + BrowserText.Display(p.Key) + ": " + BrowserText.Display(p.Value)));
+    private void DisplayChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    { if (_metadataValue is { } value) Metadata = PresentMetadata(value); }
     public void Dispose()
     {
         if (_disposed) return;
+        Display.PropertyChanged -= DisplayChanged;
         Disconnect(); _disposed = true; ++_profilesGeneration; _profiles.ProfileChanged -= ProfileChanged;
     }
 }

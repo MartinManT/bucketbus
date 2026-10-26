@@ -92,3 +92,25 @@ Session 2 adds only the Tmds.DBus credential binding. No Microsoft.Data.Sqlite, 
 Session 5 adds a separate integration-test project using existing dependencies: nine ordinary lockfiles still resolve the same 60 package/version pairs. Four `packages.linux-x64.lock.json` files retain the RID-specific production graphs without replacing ordinary locks; their graph union contains 36 package/version pairs. Self-contained publish includes .NET 10.0.13 runtime assets. Ordinary and integration NuGet audits report no known vulnerabilities on 2026-10-22. No direct/transitive package versions were changed. Release distribution notice aggregation remains pending; the internal evaluation artifact is not release qualification.
 
 Session 6 adds four `packages.win-x64.lock.json` production lockfiles with the same 36 package/version pairs as the Linux RID graph. All nine ordinary and four Linux lockfiles were preserved byte-for-byte. SDK 10.0.113 cross-publishes bundled Windows runtime 10.0.13; no application package/version changes were made. `eng/publish-windows.sh` requires the exact SDK and `eng/package-windows.py` validates the runtime/native payload, copies available package license/notice texts and supplements packages lacking text from [vendored upstream notices](third-party/README.md). The resulting dependency inventory conservatively includes 36 restored packages plus the runtime pack. AWS upstream notices are a dated snapshot with exact-source provenance still requiring public-release review. Native Windows compatibility remains BLOCKED.
+
+## Phase 1C.1 additions — 2026-10-25
+
+Microsoft.Data.Sqlite is the approved journal provider, used directly without EF
+or another ORM. The main/integration graphs and both publish RID graphs restore
+with lockfiles. NuGet audits of both solutions reported no known vulnerabilities,
+including transitive packages, on this date. Existing dependency versions are unchanged.
+
+| Added package | Resolved version | License |
+| --- | --- | --- |
+| Microsoft.Data.Sqlite | 10.0.13 | MIT |
+| Microsoft.Data.Sqlite.Core | 10.0.13 | MIT |
+| SQLitePCLRaw.bundle_e_sqlite3 | 2.1.13 | Apache-2.0 |
+| SQLitePCLRaw.core | 2.1.13 | Apache-2.0 |
+| SQLitePCLRaw.provider.e_sqlite3 | 2.1.13 | Apache-2.0 |
+| SQLitePCLRaw.lib.e_sqlite3 | 2.1.13 | Apache-2.0 packaging; SQLite engine public domain |
+
+The published Linux native library reports SQLite **3.53.3** and passed a WAL/FULL
+transaction smoke check. Windows includes the x64 native DLL; execution is still
+BLOCKED pending the VM. Notices are included in the Windows ZIP. The default bundle
+is described in [Microsoft's provider documentation](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/custom-versions).
+See [Phase 1C.1 evidence](PHASE1C1_IMPLEMENTATION.md) for the exact validation scope.

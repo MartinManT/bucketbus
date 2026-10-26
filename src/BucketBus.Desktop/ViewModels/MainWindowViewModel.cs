@@ -10,6 +10,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly ILogger<MainWindowViewModel> _logger;
     private InitializationStatus _status = InitializationStatus.Starting;
     private bool _profilesVisible;
+    public SettingsViewModel? Settings { get; }
     public ProfileManagementViewModel? Profiles { get; }
     public LocalBrowserViewModel? Local { get; }
     public TransferViewModel? Transfers { get; }
@@ -18,13 +19,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public IAsyncRelayCommand ShowProfilesCommand { get; }
     public IRelayCommand CloseProfilesCommand { get; }
 
-    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, ProfileManagementViewModel? profiles = null, RemoteBrowserViewModel? browser = null, LocalBrowserViewModel? local = null, TransferViewModel? transfers = null)
+    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, ProfileManagementViewModel? profiles = null, RemoteBrowserViewModel? browser = null, LocalBrowserViewModel? local = null, TransferViewModel? transfers = null, SettingsViewModel? settings = null)
     {
         _logger = logger;
         Profiles = profiles;
         Browser = browser;
         Local = local;
-        Transfers = transfers;
+        Transfers = transfers; Settings = settings;
         if (Browser is not null) Browser.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Browser.IsConnected)) OnPropertyChanged(nameof(StatusMessage)); };
         ShowProfilesCommand = new AsyncRelayCommand(async () =>
         {

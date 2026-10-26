@@ -2,7 +2,7 @@
 
 Status: DRAFT for review · 2026-10-21
 
-The user selected **one desktop process with a small set of internal modules** and approved **ADR-006's MVP recovery contract** on 2026-10-21. The [engineering review and Phase 1A plan](PHASE1A_PLAN.md) recommends proceeding within these boundaries. Specific packages, journal mechanism and limits remain proposed pending implementation-plan approval and validation. Approved Session 1 created the four-project foundation and offline shell; [executed evidence](SESSION1_IMPLEMENTATION.md) is limited to its build and tests. Session 2 adds profiles, credential workflows and OS adapters; [Session 2 evidence](SESSION2_IMPLEMENTATION.md) distinguishes offline results from blocked native qualification. Session 3 implements provider-neutral read-only sessions, explicit SDK clients and bounded protocol normalization; [Session 3 evidence](SESSION3_IMPLEMENTATION.md) records offline validation and remaining provider qualification. Session 4 adds graphical read-only browsing with a five-page cache and independent navigation/metadata generations; see [Session 4 evidence](SESSION4_IMPLEMENTATION.md). Writes and durable recovery remain future implementation.
+The user selected **one desktop process with a small set of internal modules** and approved **ADR-006's MVP recovery contract** on 2026-10-21. The [engineering review and Phase 1A plan](PHASE1A_PLAN.md) recommends proceeding within these boundaries. Specific packages, journal mechanism and limits remain proposed pending implementation-plan approval and validation. Approved Session 1 created the four-project foundation and offline shell; [executed evidence](SESSION1_IMPLEMENTATION.md) is limited to its build and tests. Session 2 adds profiles, credential workflows and OS adapters; [Session 2 evidence](SESSION2_IMPLEMENTATION.md) distinguishes offline results from blocked native qualification. Session 3 implements provider-neutral read-only sessions, explicit SDK clients and bounded protocol normalization; [Session 3 evidence](SESSION3_IMPLEMENTATION.md) records offline validation and remaining provider qualification. Session 4 adds graphical read-only browsing with a five-page cache and independent navigation/metadata generations; see [Session 4 evidence](SESSION4_IMPLEMENTATION.md). Single-file writes and conservative durable recovery are implemented in Phase 1C.1; later queue/retry/multipart mechanisms below remain future scope.
 
 Confirmed planning inputs: typical files under 1 GB, LAN and WAN/VPN networks, Squid (19.x) as the primary Ceph validation family, and Fedora/.NET 10 SDK/Docker development. Exact provider builds/configurations require recorded qualification. Windows 11 VM evaluation remains a Phase 1A action. These inputs preserve the separate S3/Admin Ops/IAM/future Dashboard boundaries; administration remains outside MVP.
 
@@ -124,7 +124,7 @@ The journal additionally tracks interrupted jobs after process death and indepen
 4. Stream bytes through bounded buffers. Proposed initial limits: four HTTP transfer requests globally, at most two multipart requests per object within that global bound, 1 MiB copy buffers, and 16 MiB initial parts. Multipart starts at 64 MiB; increase part size as needed for provider part-count limits. These are tuning proposals, not S3 protocol constants. Bound memory even if a provider requires larger parts.
 5. Commit result only after the SDK operation and verification have completed. Publish throttled progress snapshots to the UI, initially at most 10 updates/second per visible transfer.
 
-Use versioned JSON for profiles/settings with atomic replacement. **SQLite remains the preferred journal implementation, conditionally recommended by engineering review and awaiting selection approval/validation**, for transactional state, manifests, and cleanup records without an ORM. ADR-006 approves persistence requirements, not this mechanism. A single in-process writer owns schema migrations and transactions; a per-user instance lock prevents competing writers. Journal corruption disables automatic recovery, preserves evidence, and requires explicit recovery actions. The database is not a secrets vault; paths, keys, upload IDs, and filenames are still sensitive per-user data.
+Use versioned JSON for profiles/settings with atomic replacement. **SQLite is approved and implemented for Phase 1C.1 single-file records**, for transactional state, manifests, and cleanup records without an ORM. ADR-006 approves persistence requirements, not this mechanism. A single in-process writer owns schema migrations and transactions; a per-user instance lock prevents competing writers. Journal corruption disables automatic recovery, preserves evidence, and requires explicit recovery actions. The database is not a secrets vault; paths, keys, upload IDs, and filenames are still sensitive per-user data.
 
 The review recommends local-disk WAL with FULL synchronization, short transactions, a bounded worker away from the UI, durable intent before remote effects, transactional versioned migrations and consistent backups. No network operation holds a database transaction open. Disk-full/commit failure blocks new mutations; unknown schemas or corruption must never trigger silent database recreation. These mechanisms require crash/migration/native-package tests at 1C; see the [review's persistence contract](PHASE1A_PLAN.md#transfer-and-sqlite-review-requirements-for-1b1c). SQLite is not needed for read-only 1A.
 
@@ -194,3 +194,22 @@ Add nested guidance only where necessary: `src/BucketBus.S3/AGENTS.md` for exact
 ## Phase 1B.2 implementation boundary
 
 The authorized pre-alpha adds one active, in-memory single-file workflow. Core coordinates explicit profile/credential resolution and local leases; S3 uses a separate GET/conditional-PUT client with zero retries and exact outbound authority/key checks; Platform owns native source/destination handles; Desktop composes the services and reports progress. Browse clients retain their GET/HEAD-only guard. No multipart, queue persistence or SQLite was added. A successful upload requires full SHA-256 read-back with per-operation metadata; a lost write response is never silently replayed. Local commits are atomic no-replace or fail closed. Normal uploads attempt conditional creation using the selected profile without installed qualification evidence. Laboratory authorization remains confined to the opted-in integration harness. Collision protection depends on provider enforcement; an ignored condition cannot be detected reliably from success/read-back alone. See README for the implemented limits.
+
+## Phase 1C.1 implemented recovery boundary
+
+Core owns `TransferRecord`, its transition contract and the single-operation coordinator.
+Platform owns `SqliteTransferJournal` (Microsoft.Data.Sqlite, no ORM) and native temporary
+ownership receipts. S3 accepts the durable operation ID and exposes explicit GET-only
+full-content reconciliation. Desktop composes these services and loads history offline;
+no view performs persistence or SDK calls. The journal is lazy at construction, preserving
+offline design-time behavior. One per-user journal owner excludes competing transfer
+instances. SQLite work runs serially off the UI thread; no network call holds a transaction.
+
+Startup converts Pending to Interrupted, active uploads to Outcome Unknown, active
+downloads to Interrupted, and downloads at the local commit boundary to Requires
+Reconciliation. Recovery never starts automatically. Uploads have no restart action;
+only positive identity/hash evidence resolves them. A confirmed download restart first
+records reconciliation intent, checks its parent and temporary identities, refuses an
+existing final file, and cleans only the verified temporary entry. It retains the operation
+ID, then records Pending/Running again before a fresh whole-file GET. An ownership-capture
+gap blocks restart. See [schema, crash windows and limits](PHASE1C1_IMPLEMENTATION.md).

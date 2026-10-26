@@ -6,7 +6,7 @@ This is a sequence of reviewable outcomes, not a delivery-date promise. Typical 
 
 ## Phase 0: discovery and architecture
 
-Deliver the nine planning documents, distinguish confirmed user requirements, approved decisions, proposed engineering choices, unresolved validation requirements and executed evidence, and review scope/UX/engineering. The small modular application shape is confirmed and ADR-006's recovery scope is approved. SQLite remains preferred and conditionally recommended by engineering review; selection approval and implementation validation remain open. Q02 is resolved for scope; its remaining workload measurements do not reopen that approval by themselves. Session 1 now has [offline foundation/shell evidence](SESSION1_IMPLEMENTATION.md); no SDK provider qualification has been performed. Local connectivity checks cannot satisfy application qualification gates.
+Deliver the nine planning documents, distinguish confirmed user requirements, approved decisions, proposed engineering choices, unresolved validation requirements and executed evidence, and review scope/UX/engineering. The small modular application shape is confirmed and ADR-006's recovery scope is approved. SQLite was preferred at discovery; explicit Phase 1C.1 approval and implementation evidence are recorded below. Q02 is resolved for scope; its remaining workload measurements do not reopen that approval by themselves. Session 1 now has [offline foundation/shell evidence](SESSION1_IMPLEMENTATION.md); no SDK provider qualification has been performed. Local connectivity checks cannot satisfy application qualification gates.
 
 Exit: approve or revise the detailed baseline, assign unresolved questions, and explicitly authorize implementation. The [engineering review and implementation plan](PHASE1A_PLAN.md) is complete with conditional GO to begin 1A after coding approval. No new product discovery or mandatory additional planning cycle is recommended. Independent outside engineering coverage was unavailable. Do not treat a completed review as permission to scaffold.
 
@@ -69,3 +69,12 @@ T11 has a Fedora-produced Windows x64 evaluation ZIP with locked publishing, not
 ## Phase 1B.2 execution
 
 Single-file create-only uploads and safe downloads are implemented for review, with one active transfer, progress/cancellation and explicit ambiguous outcomes. Identified Ceph qualification covers small/zero-byte/Unicode round trips and collision protection; this does not qualify all Squid deployments or AWS. This remains pre-alpha. Phase 1C durability, native Windows transfer qualification, larger WAN workloads and later transfer features remain outstanding. No later phase starts automatically.
+
+## Phase 1C.1 execution
+
+SQLite selection is now explicitly approved. Durable single-file history and conservative,
+explicit recovery are implemented; see [results and limitations](PHASE1C1_IMPLEMENTATION.md).
+No automatic replay, batch queue, retry scheduler or multipart support is included.
+Phase 1C.2 queue/retry work requires a separate authorization. Windows native execution,
+Fedora GUI acceptance of the new recovery panel, and power-loss qualification remain open.
+No live provider tests or infrastructure changes were performed in this increment.

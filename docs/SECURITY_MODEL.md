@@ -117,4 +117,27 @@ The browser consumes Core contracts, acquires credentials only on explicit Conne
 
 ## Phase 1B.2 interim transfer safety
 
-Single-file transfers are pre-alpha and do not claim ADR-006 crash durability. Uploads use a pinned profile revision, explicit credentials, HTTPS, conditional creation and no SDK retries. Normal uploads do not read qualification evidence or require laboratory authorization. Remote no-overwrite protection depends on the provider enforcing the condition; successful read-back proves current content, not that earlier content was preserved. Rejected conditional requests never fall back to unconditional PUT. The live-test harness retains independent endpoint/scope approval, opt-in and ownership manifests. Operation identity plus full content read-back can reconcile a lost response; incomplete evidence remains Outcome Unknown. Native file adapters reject links/reparse ancestors and unsafe local leaf names, stage owned temporary output, and never replace an existing final name. Linux uses no-follow directory handles and a hard link from the actual open inode; Windows denies ancestor write/delete sharing and uses handle-based no-replace rename. No copy/delete fallback exists. These controls do not sandbox another malicious process running as the same OS user. Windows execution and attachment-zone metadata handling remain release qualification gaps. After a crash, manual inspection/temporary cleanup may be necessary; no automatic restart or cleanup of unknown remote objects occurs.
+Single-file transfers are pre-alpha. Phase 1C.1 adds the durable-record/recovery subset of ADR-006, with the limits below. Uploads use a pinned profile revision, explicit credentials, HTTPS, conditional creation and no SDK retries. Normal uploads do not read qualification evidence or require laboratory authorization. Remote no-overwrite protection depends on the provider enforcing the condition; successful read-back proves current content, not that earlier content was preserved. Rejected conditional requests never fall back to unconditional PUT. The live-test harness retains independent endpoint/scope approval, opt-in and ownership manifests. Operation identity plus full content read-back can reconcile a lost response; incomplete evidence remains Outcome Unknown. Native file adapters reject links/reparse ancestors and unsafe local leaf names, stage owned temporary output, and never replace an existing final name. Linux uses no-follow directory handles and a hard link from the actual open inode; Windows denies ancestor write/delete sharing and uses handle-based no-replace rename. No copy/delete fallback exists. These controls do not sandbox another malicious process running as the same OS user. Windows execution and attachment-zone metadata handling remain release qualification gaps. After a crash, manual inspection/temporary cleanup may be necessary; no automatic restart or cleanup of unknown remote objects occurs.
+
+## Phase 1C.1 journal and recovery
+
+The per-user `BucketBus/transfers` directory contains plaintext-sensitive paths, exact
+keys, profile revision/target bindings, content hashes and temporary identities, never
+credential values or credential objects. Linux creates the directory 0700 and database/
+lock 0600; SQLite sidecars inherit restricted access. Windows uses the current user's
+LocalApplicationData inheritance; actual ACL/native behavior remains unqualified.
+Reparse journal ancestors/sidecars are rejected; this is not a same-user sandbox.
+
+A lifetime owner lock prevents a second transfer writer. Database or commit failures
+block new effects, unknown schemas/corruption preserve original files, and startup
+only changes journal state. An operator must preserve DB/WAL/SHM together for diagnosis;
+there is no automatic repair, replacement, remote deletion or orphan sweep. Power-loss
+and filesystem durability limits are documented separately from process-crash tests.
+
+Upload reconciliation uses saved immutable operation identity, byte count and full SHA-256
+with newly resolved explicit credentials for the unchanged profile revision/target. It
+does not re-read a changed local source or infer failure from absence. No restart action
+or dismissal exists for unresolved writes. Download cleanup requires a recorded parent,
+container/file identity (Linux device/inode/birth time; Windows volume/file ID/creation time),
+no-follow/pinned paths and absence of the final destination. Missing ownership or changed
+identity fails closed; unknown files remain untouched. No startup cleanup occurs.

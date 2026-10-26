@@ -68,7 +68,7 @@ This register separates **confirmed user requirements/inventory**, **approved de
 
 ## ADR-006: Recovery before advanced resume
 
-**Status:** Approved MVP scope decision by the user on 2026-10-21. Not implemented or validated. The persistence mechanism, retry/timeout settings and reconciliation algorithms remain engineering-review items.
+**Status:** Approved MVP scope decision by the user on 2026-10-21. Phase 1C.1 implements the single-file durable-record/recovery subset; queue scheduling, bounded retries and multipart cleanup remain later work. See [executed scope and limitations](PHASE1C1_IMPLEMENTATION.md).
 
 **Decision:** Persist queued and interrupted jobs, accurate uncertain-outcome records, and known multipart cleanup obligations. Retry transient failures within bounded limits and retry failed multipart parts during the running session only where safe. Reconcile uncertain outcomes before restarting a transfer; never silently replay an uncertain write. After application restart, require user confirmation before restarting interrupted jobs, then restart the affected object from the beginning after reconciliation, required cleanup and renewed conflict/source checks. Defer cross-application-restart partial-byte upload/download resume to Phase 2.
 
@@ -82,7 +82,7 @@ This register separates **confirmed user requirements/inventory**, **approved de
 
 ## ADR-007: JSON settings plus SQLite journal
 
-**Status:** Preferred engineering choice; engineering review conditionally recommends SQLite, with selection approval and implementation validation still pending. Approval of ADR-006 does not approve a particular journal implementation. See [Phase 1A review](PHASE1A_PLAN.md#transfer-and-sqlite-review-requirements-for-1b1c).
+**Status:** SQLite explicitly approved by the user for Phase 1C.1 and implemented without an ORM. Offline crash tests and Linux native loading are recorded in [Phase 1C.1 evidence](PHASE1C1_IMPLEMENTATION.md); Windows native execution remains blocked. See [Phase 1A review](PHASE1A_PLAN.md#transfer-and-sqlite-review-requirements-for-1b1c).
 
 **Decision:** Atomic versioned JSON for settings/profiles; one SQLite dependency without ORM for durable transfer state and large manifests; single writer and per-user instance lock.
 
@@ -139,7 +139,7 @@ Owner means the proposed person responsible for resolving it, not an assigned ex
 | Q05 | Distribution measured; runtime budgets open | Session 6 Windows ZIP/expanded sizes meet proposed N05 budgets. Native startup, memory, responsiveness and accessibility measurements/disposition remain open. Under-1-GB typical size does not remove large-file stress tests | Product owner + maintainer | Use proposed budgets for initial 1A measurement; explicit disposition before 1A exit; transfer/scale verification at 1C |
 | Q06 | Environments pending | User reconfirmed Windows 11 VM unavailable in Session 6; T12 BLOCKED. AWS disposable account/access/budget unconfirmed | Product owner | Provision VM as a 1A action before Windows checks; AWS ready before real 1B runs; neither available by assumption |
 | Q07 | Open | Signing identity, funding and protected publishing method | Maintainer | Before public v1.0 / 1E release |
-| Q08 | Engineering recommendation complete; approval/proof open | SQLite conditionally recommended; local WAL/FULL, bounded worker, migration/corruption and commit-failure requirements documented; no implementation or durability evidence | Maintainer + product owner | Approve mechanism before persistence implementation; crash/migration/native-package acceptance at 1C |
+| Q08 | Approved and implemented for single-file records; native gates open | SQLite WAL/FULL, serialized off-UI transactions, schema rejection, corruption preservation and subprocess crash tests implemented; Windows cross-package inspection does not establish native execution | Maintainer | Native Windows journal/ACL/crash checks before platform qualification; future migrations require new fixtures |
 | Q09 | Partially resolved | LAN/WAN/VPN and production HTTPS/enterprise-CA qualification required. Proxy use, proxy authentication, TLS interception and explicit encryption-header requirements remain unknown | Product owner + maintainer | Clarify before 1B network/auth qualification plan; test required configurations before claiming compatibility |
 | Q10 | Open; proposal unchanged | Exact-key invalid-name policy: prompt/skip proposed; reversible bulk mapping later | UX/security review | Before download implementation at 1B |
 | Q11 | Open | Developer capacity and maintenance/release response commitments | Maintainer | Before roadmap dates or enterprise support promises |

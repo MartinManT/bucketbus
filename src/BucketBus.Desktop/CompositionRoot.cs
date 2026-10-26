@@ -19,9 +19,13 @@ public static class CompositionRoot
             logging.AddDebug();
             configureLogging?.Invoke(logging);
         });
+        services.AddSingleton<DisplayOptions>();
+        services.AddSingleton<IPreferencesStore>(_ => new JsonPreferencesStore(JsonProfileStore.DefaultDirectory));
+        services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<ITransferFiles, TransferFiles>();
         services.AddSingleton<IObjectTransferFactory, S3TransferFactory>();
+        services.AddSingleton<ITransferJournal>(_ => new SqliteTransferJournal(SqliteTransferJournal.DefaultDirectory));
         services.AddSingleton<TransferCoordinator>();
         services.AddSingleton<TransferViewModel>();
         services.AddSingleton<ILocalDirectoryBrowser, LocalDirectoryBrowser>();

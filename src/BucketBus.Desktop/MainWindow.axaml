@@ -14,6 +14,23 @@
         <TextBlock Classes="secondary" Text="Local files and S3 storage" />
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <Button x:Name="SettingsButton" Content="Settings" AutomationProperties.Name="Display settings">
+          <Button.Flyout><Flyout>
+            <StackPanel x:Name="SettingsPanel" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel" Width="300" Spacing="8">
+              <TextBlock Text="Display settings" FontWeight="SemiBold" />
+              <TextBlock Text="File size display" />
+              <ComboBox x:Name="FileSizePreference" ItemsSource="{Binding FileSizeOptions}" SelectedItem="{Binding FileSizes}" HorizontalAlignment="Stretch" AutomationProperties.Name="File size display">
+                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{ReflectionBinding Converter={StaticResource PreferenceLabel}}" /></DataTemplate></ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="Remote object names" />
+              <ComboBox x:Name="RemoteNamePreference" ItemsSource="{Binding RemoteNameOptions}" SelectedItem="{Binding RemoteNames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Remote object names">
+                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{ReflectionBinding Converter={StaticResource PreferenceLabel}}" /></DataTemplate></ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+              <Button x:Name="SavePreferences" Content="Save preferences" Command="{Binding SaveCommand}" />
+            </StackPanel>
+          </Flyout></Button.Flyout>
+        </Button>
         <Button Content="Profiles" Command="{Binding ShowProfilesCommand}" />
         <TextBlock Text="Pre-alpha · Single-file transfers" />
       </StackPanel>
@@ -78,8 +95,27 @@
         <TextBlock Text="{Binding Transfers.Source}" TextTrimming="CharacterEllipsis" />
         <TextBlock Text="{Binding Transfers.Destination}" TextTrimming="CharacterEllipsis" />
         <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding Transfers.Percent}" IsVisible="{Binding Transfers.IsBusy}" />
-        <TextBlock Text="{Binding Transfers.Bytes}" />
+        <TextBlock Text="{Binding Transfers.Bytes}" ToolTip.Tip="{Binding Transfers.ExactBytes}" />
         <TextBlock x:Name="TransferStatus" Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
+        <Expander x:Name="TransferHistoryPanel" Header="Transfer history and recovery" HorizontalAlignment="Stretch">
+          <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="5">
+            <TextBlock Text="{Binding Transfers.HistoryStatus}" TextWrapping="Wrap" />
+            <ListBox x:Name="TransferHistory" ItemsSource="{Binding Transfers.History}" SelectedItem="{Binding Transfers.SelectedHistory}" MaxHeight="100">
+              <ListBox.ItemTemplate><DataTemplate x:DataType="vm:TransferHistoryRow"><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <ScrollViewer MaxHeight="100"><TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" /></ScrollViewer>
+            <CheckBox Content="Confirm whole-file download restart (current remote content)" IsChecked="{Binding Transfers.ConfirmRestart}" />
+            <CheckBox Content="Allow vault unlock prompt for explicit recovery" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
+            <WrapPanel Orientation="Horizontal">
+              <Button Content="Reload history" Command="{Binding Transfers.ReloadHistoryCommand}" />
+              <Button Content="Reconcile upload" Command="{Binding Transfers.ReconcileCommand}" />
+              <Button Content="Restart download" Command="{Binding Transfers.RestartCommand}" />
+              <Button Content="Dismiss resolved" Command="{Binding Transfers.DismissCommand}" />
+            </WrapPanel>
+          </StackPanel>
+          </ScrollViewer>
+        </Expander>
       </StackPanel>
     </Border>
 

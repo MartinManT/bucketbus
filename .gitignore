@@ -35,3 +35,15 @@
 # Python packaging helper cache
 **/__pycache__/
 *.py[cod]
+
+# Per-user transfer journals and SQLite sidecars are never public source.
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+owner.lock
+
+# Local display preference copies and atomic write artifacts
+/preferences.json
+/preferences.lock
+.preferences-*.tmp

@@ -36,7 +36,7 @@ def package(payload):
             "Unexpected self-contained runtime; review servicing and packaging evidence.")
     # Confirm x64 PE headers, not merely filenames or a successful cross-build.
     for name in ("BucketBus.Desktop.exe", "coreclr.dll", "hostfxr.dll", "hostpolicy.dll",
-                 "libSkiaSharp.dll", "libHarfBuzzSharp.dll", "av_libglesv2.dll"):
+                 "libSkiaSharp.dll", "libHarfBuzzSharp.dll", "av_libglesv2.dll", "e_sqlite3.dll"):
         data = (payload / name).read_bytes()
         offset = struct.unpack_from("<I", data, 0x3C)[0]
         require(data[:2] == b"MZ" and data[offset:offset + 4] == b"PE\0\0"
@@ -96,6 +96,10 @@ def package(payload):
                 shutil.copyfile(path, target)
                 supplied.append(target.relative_to(payload).as_posix())
         extra = supplemental.get(package_id, [])
+        if package_id.startswith("Microsoft.Data.Sqlite"):
+            extra = ["Microsoft.Data.Sqlite.LICENSE.txt"]
+        if package_id.startswith("SQLitePCLRaw."):
+            extra = ["SQLitePCLRaw.LICENSE.txt", "SQLite.NOTICE.txt"]
         if package_id.startswith("Avalonia.") and version == "12.1.4" and not supplied:
             extra = supplemental["Avalonia"]
         # BuildServices contributes no runtime asset; retain its metadata in the inventory.

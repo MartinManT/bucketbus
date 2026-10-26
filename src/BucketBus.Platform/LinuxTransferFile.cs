@@ -77,6 +77,38 @@ internal sealed class LinuxTransferFile : NativeTransferFile
             parent.Dispose(); throw;
         }
     }
+    public override TemporaryReceipt? Receipt
+    {
+        get
+        {
+            var parent = Info(_directory);
+            if (_temporaryDirectory is null || (parent.Mask & _initial.Mask & _temporaryIdentity.Mask & 0x800) == 0) return null;
+            return new("linux", _temporaryName!, Identity(parent), Identity(_temporaryIdentity), Identity(_initial));
+        }
+    }
+    private static string Identity(Stat value) => $"{value.DeviceMajor}:{value.DeviceMinor}:{value.Inode}:{value.BirthSeconds}:{value.BirthNanoseconds}";
+    internal static void Recover(string directory, string name, TemporaryReceipt receipt)
+    {
+        using var parent = OpenDirectory(directory);
+        if (Identity(Info(parent)) != receipt.ParentIdentity) throw new TransferException(TransferError.RecoveryUnavailable);
+        if (statx(parent, name, 0x100, 0xfff, out _) == 0) throw new TransferException(TransferError.Conflict);
+        if (Marshal.GetLastPInvokeError() != 2) Fail();
+        if (statx(parent, receipt.Name, 0x100, 0xfff, out var container) != 0)
+        { if (Marshal.GetLastPInvokeError() == 2) return; Fail(); }
+        using var temp = Handle(openat(parent, receipt.Name, DirectoryFlag | NoFollow | CloseOnExec, 0));
+        if (Identity(Info(temp)) != receipt.ContainerIdentity || Identity(container) != receipt.ContainerIdentity)
+            throw new TransferException(TransferError.RecoveryUnavailable);
+        if (statx(temp, "payload.part", 0x100, 0xfff, out var payload) == 0)
+        {
+            if ((payload.Mode & 0xf000) != 0x8000 || Identity(payload) != receipt.FileIdentity)
+                throw new TransferException(TransferError.RecoveryUnavailable);
+            if (unlinkat(temp, "payload.part", 0) != 0) Fail();
+        }
+        else if (Marshal.GetLastPInvokeError() != 2) Fail();
+        if (statx(parent, receipt.Name, 0x100, 0xfff, out container) != 0 || Identity(container) != receipt.ContainerIdentity)
+            throw new TransferException(TransferError.RecoveryUnavailable);
+        if (unlinkat(parent, receipt.Name, 0x200) != 0) Fail();
+    }
     public override void Validate()
     {
         var now = Info(Stream.SafeFileHandle);
@@ -109,7 +141,7 @@ internal sealed class LinuxTransferFile : NativeTransferFile
     private static bool SameIdentity(Stat a, Stat b) => a.Inode == b.Inode && a.DeviceMajor == b.DeviceMajor && a.DeviceMinor == b.DeviceMinor;
     private static Stat Info(SafeFileHandle file)
     {
-        if (statx(file, "", 0x1000, 0x7ff, out var info) != 0) Fail();
+        if (statx(file, "", 0x1000, 0xfff, out var info) != 0) Fail();
         if ((info.Mask & 0x3c3) != 0x3c3) throw new TransferException(TransferError.UnsupportedFilesystem);
         return info;
     }
@@ -124,6 +156,8 @@ internal sealed class LinuxTransferFile : NativeTransferFile
         [FieldOffset(28)] public ushort Mode;
         [FieldOffset(32)] public ulong Inode;
         [FieldOffset(40)] public ulong Size;
+        [FieldOffset(80)] public long BirthSeconds;
+        [FieldOffset(88)] public uint BirthNanoseconds;
         [FieldOffset(96)] public long ChangeSeconds;
         [FieldOffset(104)] public uint ChangeNanoseconds;
         [FieldOffset(112)] public long ModifiedSeconds;

@@ -21,3 +21,11 @@ release. No license expression is treated as a replacement for bundled notices.
 The publish workflow also copies .NET runtime, SkiaSharp, HarfBuzz, ANGLE, Inter font
 and other included package notices. This is a technical inventory, not legal
 certification. A complete release provenance/SBOM/signing review remains required.
+
+Phase 1C.1 adds Microsoft.Data.Sqlite's MIT license from the restored package's
+repository commit `4099f83977f4d29604a9aeb971fb0a7bc1d5f699`, path
+`src/efcore/LICENSE.txt` in `dotnet/dotnet`. SQLitePCLRaw 2.1.13 package metadata
+declares Apache-2.0; its upstream `ericsink/SQLitePCL.raw/main/LICENSE.TXT` text
+was retrieved on 2026-10-25. The native SQLite engine's public-domain statement
+is referenced in `SQLite.NOTICE.txt`. These notices accompany the new runtime
+assets; package content hashes remain recorded in the lockfiles.

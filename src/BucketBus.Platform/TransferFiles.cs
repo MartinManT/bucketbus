@@ -27,6 +27,22 @@ public sealed class TransferFiles : ITransferFiles
         try { return new Destination(NativeTransferFile.CreateDestination(directory, name)); }
         catch (Exception e) { throw Map(e); }
     }, token);
+    public Task RecoverDestinationAsync(TransferRecord record, CancellationToken token) => Task.Run(() =>
+    {
+        token.ThrowIfCancellationRequested();
+        if (record.Upload || record.Temporary is not { } receipt) throw new TransferException(TransferError.RecoveryUnavailable);
+        var suffix = receipt.Platform == "linux" ? ".tmp" : ".part";
+        if (!receipt.Name.StartsWith(".bucketbus-", StringComparison.Ordinal) || !receipt.Name.EndsWith(suffix, StringComparison.Ordinal)
+            || receipt.Name.Length != 11 + 32 + suffix.Length || !Guid.TryParseExact(receipt.Name[11..^suffix.Length], "N", out _)) throw new TransferException(TransferError.RecoveryUnavailable);
+        TransferNames.Validate(receipt.Name);
+        try
+        {
+            if (OperatingSystem.IsLinux() && receipt.Platform == "linux") LinuxTransferFile.Recover(record.LocalPath, TransferNames.FromKey(record.Key), receipt);
+            else if (OperatingSystem.IsWindows() && receipt.Platform == "windows") WindowsTransferFile.Recover(record.LocalPath, TransferNames.FromKey(record.Key), receipt);
+            else throw new TransferException(TransferError.UnsupportedFilesystem);
+        }
+        catch (Exception e) { throw Map(e); }
+    }, token);
     private static async Task<(string Sha, string Md5)> HashAsync(Stream stream, CancellationToken token)
     {
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -61,6 +77,7 @@ public sealed class TransferFiles : ITransferFiles
     private sealed class Destination(NativeTransferFile file) : ITransferDestination
     {
         public Stream Content => file.Stream;
+        public TemporaryReceipt? Receipt => file.Receipt;
         public bool CleanupRequired => file.CleanupRequired;
         public Task CommitAsync(CancellationToken token) => Task.Run(() =>
         {
@@ -75,6 +92,7 @@ public sealed class TransferFiles : ITransferFiles
 internal abstract class NativeTransferFile : IDisposable
 {
     public abstract FileStream Stream { get; }
+    public virtual TemporaryReceipt? Receipt => null;
     public bool CleanupRequired { get; protected set; }
     public abstract void Validate();
     public abstract void Commit();

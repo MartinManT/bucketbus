@@ -18,7 +18,8 @@ public sealed record LocalRow(LocalEntry Entry)
         LocalEntryKind.SymbolicLink => Entry.CanEnter ? "Folder link" : "Link",
         LocalEntryKind.Other => "Special", _ => "Unavailable"
     };
-    public string SizeText => Entry.Size is { } size ? size.ToString("N0", CultureInfo.CurrentCulture) + " B" : "—";
+    public string SizeText => Entry.Kind == LocalEntryKind.Directory ? "—" : ByteSizeFormatter.Format(Entry.Size);
+    public string ExactSize => Entry.Kind == LocalEntryKind.Directory ? "Folder; size not calculated" : ByteSizeFormatter.Exact(Entry.Size);
     public string ModifiedText => Entry.Modified?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture) ?? "Unknown";
 }
 
@@ -55,8 +56,10 @@ public sealed class LocalBrowserViewModel : ObservableObject, IDisposable
     public IRelayCommand CancelCommand { get; }
     public IRelayCommand<LocalSortField> SortCommand { get; }
 
-    public LocalBrowserViewModel(ILocalDirectoryBrowser files)
+    public DisplayOptions Display { get; }
+    public LocalBrowserViewModel(ILocalDirectoryBrowser files, DisplayOptions? display = null)
     {
+        Display = display ?? new();
         _files = files; _pathInput = files.HomeDirectory;
         GoCommand = new AsyncRelayCommand(() => NavigateAsync(PathInput), AsyncRelayCommandOptions.AllowConcurrentExecutions);
         NavigateCommand = new AsyncRelayCommand<string>(path => NavigateAsync(path ?? ""), AsyncRelayCommandOptions.AllowConcurrentExecutions);

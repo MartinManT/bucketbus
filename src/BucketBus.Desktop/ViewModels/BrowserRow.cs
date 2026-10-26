@@ -12,7 +12,8 @@ public sealed record BrowserRow(string Key, BrowserRowKind Kind, long? Size = nu
     public string Name => BrowserText.Display(Key);
     public string ExactIdentity => BrowserText.Display(Key, asciiOnly: true);
     public string Type => Kind switch { BrowserRowKind.Bucket => "Bucket", BrowserRowKind.Prefix => "Prefix", _ => Key.EndsWith('/') ? "Marker object" : "Object" };
-    public string SizeText => Size is { } size ? size.ToString("N0", CultureInfo.CurrentCulture) + " B" : "Unknown";
+    public string SizeText => Kind == BrowserRowKind.Object ? ByteSizeFormatter.Format(Size) : "—";
+    public string ExactSize => Kind == BrowserRowKind.Object ? ByteSizeFormatter.Exact(Size) : "Not applicable";
     public string ModifiedText => Modified?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) ?? "Unknown";
 }
 

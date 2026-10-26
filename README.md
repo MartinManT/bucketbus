@@ -2,7 +2,24 @@
 
 A cross-platform, Commander-style S3 file manager, with Ceph RGW as the initial validation target.
 
-Development is at **Phase 1B.2: pre-alpha single-file transfers**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. One selected file can be uploaded with a create-only request; one selected object can be downloaded without replacing local data. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+Development is at **Phase 1C.1: durable single-file transfers and conservative crash recovery**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. One selected file can be uploaded with a create-only request; one selected object can be downloaded without replacing local data. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+
+## Display settings
+
+Open **Settings** in the main window to choose **Human-readable** IEC sizes
+(default) or **Exact bytes**, and **Relative names** (default) or **Full keys** for
+remote objects. Changes apply immediately to existing rows, progress, history and
+cached metadata. Exact byte counts remain in size/progress tooltips and metadata;
+the complete S3 key remains in its tooltip and metadata. Folder sizes show `—`;
+unavailable object/file sizes show `Unknown`.
+
+Choose **Save preferences** to retain the choices across launches. Preferences use
+a separate versioned `preferences.json` in the per-user BucketBus application-data
+directory, independent of profiles, credentials and the transfer journal. A missing
+or damaged file uses defaults; a save failure is shown and choices remain active
+for that session. Relative names only affect presentation: exact keys, numeric
+sorting, paging and transfer/recovery identities stay intact. Theme choices are
+planned for a later increment.
 
 ## Build and test
 
@@ -150,11 +167,24 @@ of remote equality. ETags are opaque. The buffer is 64 KiB. Transfers have a two
 total deadline; download response-body reads have a 30-second idle deadline. Single
 PUTs are limited to 5 GiB; there is no multipart support or automatic retry.
 
-**No durable queue, crash recovery or resume exists yet.** An application crash
-may leave an upload requiring manual remote inspection, or an owned temporary
-download requiring local cleanup. Nothing replays on restart. ADR-006's full MVP
-recovery contract remains for Phase 1C. Windows native file semantics, GUI and
-accessibility still require the Windows VM; headless tests are not native proof.
+Transfers are now recorded in a per-user SQLite journal before destination effects.
+Expand **Transfer history and recovery** to inspect previous results and unresolved
+operations without connecting to S3. Startup never replays work or cleans temporary
+files. Explicit upload reconciliation requires the saved operation ID and full
+SHA-256 read-back; absence, denial or a mismatch remains unresolved, and upload
+restart is unavailable. Unresolved targets also block a fresh upload attempt.
+Eligible interrupted downloads can restart from byte zero after confirmation,
+matching temporary ownership and checking that the final name is absent. Restart
+downloads the current remote object, which may differ from the earlier attempt.
+Resolved history can be dismissed without deleting local or remote data.
+
+A journal error blocks transfers and preserves evidence. Close other instances and
+preserve the database plus WAL/SHM together for diagnosis; do not delete the journal
+to unblock uncertain writes. Ownership gaps or a possibly published final file
+remain unresolved. There is no batch scheduler, automatic retry or partial resume.
+See [Phase 1C.1 implementation and manual acceptance](docs/PHASE1C1_IMPLEMENTATION.md)
+for durability limits and validation. Windows native checks remain BLOCKED; headless
+tests and cross-publishing do not prove Windows compatibility.
 
 Manual check on Fedora or Windows:
 

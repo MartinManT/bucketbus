@@ -15,14 +15,14 @@ internal sealed class BrowserFixture : IDisposable
     public ReadOnlySessionController Controller { get; }
     public RemoteBrowserViewModel Browser { get; }
     public BrowserFactory Factory { get; } = new();
-    public BrowserFixture(string? bucket = "test-bucket", string? prefix = null)
+    public BrowserFixture(string? bucket = "test-bucket", string? prefix = null, DisplayOptions? display = null)
     {
         var settings = new ProfileSettings("Synthetic profile", "https://storage.example.test", "us-east-1", AddressingStyle.Path, bucket, prefix);
         var id = Guid.NewGuid();
         Profiles.Snapshot = new(1, [new(id, 1, settings, new(id, Guid.NewGuid(), CredentialStorage.Secure, settings.TargetFingerprint()))]);
         Manager = new(Profiles, Vault, MemoryCredentials);
         Controller = new(Manager, Factory);
-        Browser = new(Manager, Controller);
+        Browser = new(Manager, Controller, display);
     }
     public async Task SelectAsync() { await Browser.ReloadProfilesAsync(); Browser.SelectedProfile = Browser.ProfilesList[0]; }
     public async Task ConnectAsync() { await SelectAsync(); await Browser.ConnectCommand.ExecuteAsync(null); }

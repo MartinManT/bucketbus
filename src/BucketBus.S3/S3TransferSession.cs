@@ -10,11 +10,11 @@ internal sealed class S3TransferSession(AmazonS3Client client,
     TransferTransport transport, IDisposable owner, TimeSpan deadline) : IObjectTransferSession
 {
     private int _used;
-    public async Task<TransferResult> UploadAsync(string bucket, string key, ITransferSource source, IProgress<TransferProgress>? progress, CancellationToken token)
+    public async Task<TransferResult> UploadAsync(string bucket, string key, ITransferSource source, IProgress<TransferProgress>? progress, CancellationToken token, Guid? operationId = null)
     {
         if (Interlocked.Exchange(ref _used, 1) != 0) return new(TransferState.Failed, TransferError.Busy);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(deadline);
-        var operation = Guid.NewGuid().ToString("N");
+        var operation = (operationId ?? Guid.NewGuid()).ToString("N");
         var length = source.Length;
         var acknowledged = false;
         try
@@ -66,6 +66,19 @@ internal sealed class S3TransferSession(AmazonS3Client client,
             }
             return new(TransferState.OutcomeUnknown, error);
         }
+    }
+    public async Task<TransferResult> ReconcileUploadAsync(TransferRecord record, CancellationToken token)
+    {
+        if (Interlocked.Exchange(ref _used, 1) != 0) return new(TransferState.OutcomeUnknown, TransferError.Busy);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(deadline);
+        try
+        {
+            record.Validate();
+            if (!record.CanReconcile) return new(TransferState.OutcomeUnknown, TransferError.RecoveryUnavailable);
+            await VerifyUpload(record.Bucket, record.Key, record.Id.ToString("N"), record.Sha256!, record.Total!.Value, timeout.Token).ConfigureAwait(false);
+            return new(TransferState.Completed, Verification: "Reconciled by saved operation identity and full SHA-256 read-back. No PUT was sent.");
+        }
+        catch (Exception e) { return new(TransferState.OutcomeUnknown, Error(e, token, timeout.Token)); }
     }
     private static TransferError RejectedUpload(AmazonS3Exception error)
     {

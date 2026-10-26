@@ -11,6 +11,7 @@ internal sealed class WindowsTransferFile : NativeTransferFile
     private readonly string? _finalPath;
     private readonly Info _initial;
     private bool _committed, _disposed;
+    private string? _temporaryName;
     public override FileStream Stream { get; }
     private WindowsTransferFile(List<SafeFileHandle> parents, SafeFileHandle file, string? finalPath)
     {
@@ -53,11 +54,37 @@ internal sealed class WindowsTransferFile : NativeTransferFile
         SafeFileHandle? file = null;
         try
         {
-            file = Open(Path.Combine(directory, ".bucketbus-" + Guid.NewGuid().ToString("N") + ".part"),
+            var temporaryName = ".bucketbus-" + Guid.NewGuid().ToString("N") + ".part";
+            file = Open(Path.Combine(directory, temporaryName),
                 0xc0010000, 0, 1, 0x00200100); // read/write/delete; no sharing; CREATE_NEW
-            return new(parents, file, Path.Combine(directory, name));
+            return new(parents, file, Path.Combine(directory, name)) { _temporaryName = temporaryName };
         }
         catch { file?.Dispose(); foreach (var h in parents) h.Dispose(); throw; }
+    }
+    public override TemporaryReceipt? Receipt => _temporaryName is null ? null
+        : new("windows", _temporaryName, Identity(Inspect(_parents[^1])), "", Identity(_initial));
+    private static string Identity(Info value) => $"{value.Volume}:{value.IndexHigh}:{value.IndexLow}:{value.Created.dwHighDateTime}:{value.Created.dwLowDateTime}";
+    internal static void Recover(string directory, string name, TemporaryReceipt receipt)
+    {
+        var parents = PinDirectory(directory);
+        try
+        {
+            if (Identity(Inspect(parents[^1])) != receipt.ParentIdentity) throw new TransferException(TransferError.RecoveryUnavailable);
+            using (var final = CreateFileW(Path.Combine(directory, name), 0x80, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero))
+            {
+                if (!final.IsInvalid) throw new TransferException(TransferError.Conflict);
+                if (Marshal.GetLastPInvokeError() != 2) Fail();
+            }
+            using var file = CreateFileW(Path.Combine(directory, receipt.Name), 0x10080, 0, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
+            if (file.IsInvalid) { if (Marshal.GetLastPInvokeError() == 2) return; Fail(); }
+            var info = Inspect(file);
+            if ((info.Attributes & 0x410) != 0 || GetFileType(file) != 1 || Identity(info) != receipt.FileIdentity)
+                throw new TransferException(TransferError.RecoveryUnavailable);
+            var buffer = Marshal.AllocHGlobal(1);
+            try { Marshal.WriteByte(buffer, 1); if (!SetFileInformationByHandle(file, 4, buffer, 1)) Fail(); }
+            finally { Marshal.FreeHGlobal(buffer); }
+        }
+        finally { foreach (var parent in parents) parent.Dispose(); }
     }
     public override void Validate()
     {

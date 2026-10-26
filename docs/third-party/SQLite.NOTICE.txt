@@ -1,0 +1,6 @@
+SQLite native engine
+
+The SQLite authors dedicate the deliverable engine and documentation to the
+public domain. See https://sqlite.org/copyright.html for the upstream statement.
+SQLitePCLRaw packaging and bindings retain their Apache-2.0 license, included
+separately as SQLitePCLRaw.LICENSE.txt.

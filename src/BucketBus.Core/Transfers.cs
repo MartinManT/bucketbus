@@ -1,11 +1,11 @@
 namespace BucketBus.Core;
 
-public enum TransferState { Completed, Failed, Cancelled, OutcomeUnknown }
+public enum TransferState { Completed, Failed, Cancelled, OutcomeUnknown, Pending, Running, Interrupted, RequiresReconciliation }
 public enum TransferError
 {
     None, Conflict, InvalidName, UnsupportedFilesystem, PermissionDenied, DiskFull, LocalFailure,
     IntegrityMismatch, SourceChanged, NetworkFailure, Timeout, CredentialsUnavailable, ProfileChanged,
-    ConditionalWriteUnsupported, RemoteRejected, Busy, CleanupRequired, AuthenticationFailed
+    ConditionalWriteUnsupported, RemoteRejected, Busy, CleanupRequired, AuthenticationFailed, JournalUnavailable, RecoveryUnavailable
 }
 public sealed record TransferResult(TransferState State, TransferError Error = TransferError.None,
     string Verification = "", bool CleanupRequired = false);
@@ -27,76 +27,22 @@ public interface ITransferDestination : IAsyncDisposable
     // The commit is the cancellation boundary: once committed the result is Completed.
     Task CommitAsync(CancellationToken token);
     bool CleanupRequired { get; }
+    TemporaryReceipt? Receipt => null;
 }
 public interface ITransferFiles
 {
     Task<ITransferSource> OpenSourceAsync(string path, CancellationToken token);
     Task<ITransferDestination> CreateDestinationAsync(string directory, string name, CancellationToken token);
+    Task RecoverDestinationAsync(TransferRecord record, CancellationToken token) => throw new TransferException(TransferError.RecoveryUnavailable);
 }
 public interface IObjectTransferSession : IAsyncDisposable
 {
-    Task<TransferResult> UploadAsync(string bucket, string key, ITransferSource source, IProgress<TransferProgress>? progress, CancellationToken token);
+    Task<TransferResult> UploadAsync(string bucket, string key, ITransferSource source, IProgress<TransferProgress>? progress, CancellationToken token, Guid? operationId = null);
+    Task<TransferResult> ReconcileUploadAsync(TransferRecord record, CancellationToken token) => Task.FromResult(new TransferResult(TransferState.OutcomeUnknown, TransferError.RecoveryUnavailable));
     Task<TransferResult> DownloadAsync(string bucket, string key, Stream destination, IProgress<TransferProgress>? progress, CancellationToken token);
 }
 public interface IObjectTransferFactory
 { IObjectTransferSession Create(ConnectionProfile profile, Credentials credentials); }
-
-/// <summary>One explicit operation; independent of browse navigation and never persisted/replayed.</summary>
-public sealed class TransferCoordinator(ProfileManager profiles, ITransferFiles files, IObjectTransferFactory factory)
-{
-    private int _active;
-    public async Task<TransferResult> RunAsync(ConnectionProfile profile, string bucket, string key, string localPath,
-        bool upload, bool allowUnlock, IProgress<TransferProgress>? progress, CancellationToken token)
-    {
-        if (Interlocked.Exchange(ref _active, 1) != 0) return new(TransferState.Failed, TransferError.Busy);
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
-        void Changed(Guid id) { if (id == profile.Id) lifetime.Cancel(); }
-        profiles.ProfileChanged += Changed;
-        ITransferDestination? destination = null;
-        TransferResult result;
-        var uploadStarted = false;
-        var cleanupFailed = false;
-        try
-        {
-            var ct = lifetime.Token;
-            var snapshot = await profiles.ReadAsync(ct).ConfigureAwait(false);
-            if (snapshot.Status != ProfileStatus.Success || !snapshot.Snapshot!.Profiles.Contains(profile))
-                return new(TransferState.Failed, TransferError.ProfileChanged);
-            var credential = await profiles.ReadCredentialAsync(profile.Id, profile.Revision, allowUnlock, ct).ConfigureAwait(false);
-            if (credential.Status != CredentialStatus.Found || credential.Value is null)
-                return new(ct.IsCancellationRequested ? TransferState.Cancelled : TransferState.Failed, TransferError.CredentialsUnavailable);
-            ct.ThrowIfCancellationRequested();
-            await using var remote = factory.Create(profile, credential.Value);
-            if (upload)
-            {
-                await using var source = await files.OpenSourceAsync(localPath, ct).ConfigureAwait(false);
-                var latest = await profiles.ReadAsync(ct).ConfigureAwait(false);
-                if (latest.Status != ProfileStatus.Success || !latest.Snapshot!.Profiles.Contains(profile))
-                    return new(TransferState.Failed, TransferError.ProfileChanged);
-                ct.ThrowIfCancellationRequested();
-                uploadStarted = true;
-                result = await remote.UploadAsync(bucket, key, source, progress, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                destination = await files.CreateDestinationAsync(localPath, TransferNames.FromKey(key), ct).ConfigureAwait(false);
-                result = await remote.DownloadAsync(bucket, key, destination.Content, progress, ct).ConfigureAwait(false);
-                if (result.State == TransferState.Completed) await destination.CommitAsync(ct).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) { result = new(uploadStarted ? TransferState.OutcomeUnknown : TransferState.Cancelled); }
-        catch (TransferException e) { result = new(uploadStarted ? TransferState.OutcomeUnknown : TransferState.Failed, e.Error); }
-        catch (Exception) { result = new(uploadStarted ? TransferState.OutcomeUnknown : TransferState.Failed, TransferError.LocalFailure); }
-        finally
-        {
-            if (destination is not null)
-                try { await destination.DisposeAsync().ConfigureAwait(false); } catch { cleanupFailed = true; }
-            profiles.ProfileChanged -= Changed;
-            Volatile.Write(ref _active, 0);
-        }
-        return cleanupFailed || destination?.CleanupRequired == true ? result with { CleanupRequired = true } : result;
-    }
-}
 
 public static class TransferNames
 {

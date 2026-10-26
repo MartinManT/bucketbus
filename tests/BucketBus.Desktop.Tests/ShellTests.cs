@@ -16,10 +16,10 @@ namespace BucketBus.Desktop.Tests;
 public sealed class ShellTests
 {
     [AvaloniaFact]
-    public void Production_resources_and_injected_shell_initialize_headlessly()
+    public async Task Production_resources_and_injected_shell_initialize_headlessly()
     {
         Assert.IsType<App>(Application.Current);
-        using var services = CompositionRoot.CreateServices();
+        await using var services = CompositionRoot.CreateServices();
         var viewModel = services.GetRequiredService<MainWindowViewModel>();
         var window = new MainWindow { DataContext = viewModel };
         try
@@ -82,10 +82,10 @@ public sealed class ShellTests
     }
 
     [AvaloniaFact]
-    public void Startup_failure_presents_safe_text_and_never_logs_the_raw_exception()
+    public async Task Startup_failure_presents_safe_text_and_never_logs_the_raw_exception()
     {
         var recorder = new RecordingLoggerProvider();
-        using var services = CompositionRoot.CreateServices(logging => logging.AddProvider(recorder));
+        await using var services = CompositionRoot.CreateServices(logging => logging.AddProvider(recorder));
         var viewModel = services.GetRequiredService<MainWindowViewModel>();
         var window = new MainWindow { DataContext = viewModel };
         const string sensitive = "synthetic-secret-do-not-log";

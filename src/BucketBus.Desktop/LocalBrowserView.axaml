@@ -30,7 +30,11 @@
         <DataTemplate x:DataType="vm:LocalRow">
           <Grid ColumnDefinitions="*,75,115,80" ColumnSpacing="4" ToolTip.Tip="{Binding Identity}">
             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MinWidth="70" />
-            <TextBlock Grid.Column="1" Text="{Binding SizeText}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" ToolTip.Tip="{Binding ExactSize}" TextTrimming="CharacterEllipsis">
+              <TextBlock.Text><MultiBinding Converter="{StaticResource SizeDisplay}">
+                <Binding Path="Entry.Size" /><ReflectionBinding Path="DataContext.Display.Current" RelativeSource="{RelativeSource FindAncestor, AncestorType={x:Type UserControl}}" /><Binding Path="Entry.Kind" />
+              </MultiBinding></TextBlock.Text>
+            </TextBlock>
             <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
             <TextBlock Grid.Column="3" Text="{Binding Type}" TextTrimming="CharacterEllipsis" />
           </Grid>

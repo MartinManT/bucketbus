@@ -48,8 +48,18 @@
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:BrowserRow">
           <Grid ColumnDefinitions="*,90,135,85" ColumnSpacing="4" ToolTip.Tip="{Binding ExactIdentity}">
-            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MinWidth="80" />
-            <TextBlock Grid.Column="1" Text="{Binding SizeText}" />
+            <TextBlock TextTrimming="CharacterEllipsis" MinWidth="80">
+              <TextBlock.Text><MultiBinding Converter="{StaticResource RemoteName}">
+                <Binding Path="Key" /><Binding Path="Kind" />
+                <ReflectionBinding Path="DataContext.ActivePrefix" RelativeSource="{RelativeSource FindAncestor, AncestorType={x:Type UserControl}}" />
+                <ReflectionBinding Path="DataContext.Display.Current" RelativeSource="{RelativeSource FindAncestor, AncestorType={x:Type UserControl}}" />
+              </MultiBinding></TextBlock.Text>
+            </TextBlock>
+            <TextBlock Grid.Column="1" ToolTip.Tip="{Binding ExactSize}" TextTrimming="CharacterEllipsis">
+              <TextBlock.Text><MultiBinding Converter="{StaticResource SizeDisplay}">
+                <Binding Path="Size" /><ReflectionBinding Path="DataContext.Display.Current" RelativeSource="{RelativeSource FindAncestor, AncestorType={x:Type UserControl}}" /><Binding Path="Kind" />
+              </MultiBinding></TextBlock.Text>
+            </TextBlock>
             <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
             <TextBlock Grid.Column="3" Text="{Binding Type}" />
           </Grid>

@@ -22,5 +22,7 @@ dotnet publish src/BucketBus.Desktop -c Release -r win-x64 --self-contained true
     -p:PublishSingleFile=false -p:PublishTrimmed=false -p:PublishAot=false \
     -p:DebugType=None -p:DebugSymbols=false -o "$publish_stage/BucketBus"
 
+python3 eng/check-sqlite.py "$publish_stage/BucketBus" win-x64
+
 # Only the fresh publish payload and explicitly selected public documents enter the ZIP.
 python3 eng/package-windows.py "$publish_stage/BucketBus"

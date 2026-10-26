@@ -38,8 +38,9 @@ public partial class App : Application
             desktop.MainWindow = new MainWindow { DataContext = viewModel, ShutdownAsync = ShutdownAsync };
             desktop.MainWindow.Opened += async (_, _) =>
             {
+                if (viewModel.Settings is not null) await viewModel.Settings.InitializeAsync();
                 viewModel.CompleteInitialization();
-                await Task.WhenAll(viewModel.Local?.InitializeAsync() ?? Task.CompletedTask,
+                await Task.WhenAll(viewModel.Transfers?.InitializeAsync() ?? Task.CompletedTask, viewModel.Local?.InitializeAsync() ?? Task.CompletedTask,
                     viewModel.Browser?.ReloadProfilesAsync() ?? Task.CompletedTask);
             };
             // Normal close awaits cleanup before the final window closes. External/forced exit

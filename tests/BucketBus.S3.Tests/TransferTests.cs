@@ -215,6 +215,53 @@ public sealed class TransferTests
         var result = await session.UploadAsync("test-bucket", "key", source, null, cancel.Token);
         Assert.Equal(TransferState.Cancelled, result.State); Assert.Equal(0, transport.Attempts);
     }
+    [Theory]
+    [InlineData("match", TransferState.Completed)]
+    [InlineData("missing", TransferState.OutcomeUnknown)]
+    [InlineData("denied", TransferState.OutcomeUnknown)]
+    [InlineData("identity", TransferState.OutcomeUnknown)]
+    [InlineData("content", TransferState.OutcomeUnknown)]
+    [InlineData("disconnect", TransferState.OutcomeUnknown)]
+    public async Task Restart_reconciliation_only_reads_and_requires_saved_identity_and_full_bytes(string mode, TransferState expected)
+    {
+        var id = Guid.NewGuid(); var profile = Profile();
+        var record = new TransferRecord(id, 2, profile.Id, profile.Revision, profile.Settings.TargetFingerprint(), profile.Settings.Endpoint,
+            "test-bucket", "key", Path.GetFullPath("gone-source"), true, TransferState.RequiresReconciliation,
+            Total: Data.Length, Sha256: Convert.ToBase64String(SHA256.HashData(Data)));
+        var transport = new ScriptTransport((request, _) =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            if (mode == "disconnect") throw new IOException("synthetic disconnect");
+            return Task.FromResult(mode switch
+            {
+                "missing" => SdkFixture.Xml(SdkFixture.Error("NoSuchKey"), HttpStatusCode.NotFound),
+                "denied" => SdkFixture.Xml(SdkFixture.Error("AccessDenied"), HttpStatusCode.Forbidden),
+                "identity" => Object(Data, Guid.NewGuid().ToString("N")),
+                "content" => Object(new byte[Data.Length], id.ToString("N")),
+                _ => Object(Data, id.ToString("N"))
+            });
+        });
+        await using var session = Session(transport);
+        Assert.Equal(expected, (await session.ReconcileUploadAsync(record, TestContext.Current.CancellationToken)).State);
+        Assert.Equal(1, transport.Attempts);
+    }
+    [Fact]
+    public async Task Upload_uses_durable_operation_identity_in_put_and_readback()
+    {
+        var id = Guid.NewGuid();
+        using var source = new Source(Data);
+        var transport = new ScriptTransport((request, _) =>
+        {
+            if (request.Method == HttpMethod.Put)
+            {
+                Assert.Equal(id.ToString("N"), Assert.Single(request.Headers.GetValues("x-amz-meta-bucketbus-operation")));
+                return Task.FromResult(Object([]));
+            }
+            return Task.FromResult(Object(Data, id.ToString("N")));
+        });
+        await using var session = Session(transport);
+        Assert.Equal(TransferState.Completed, (await session.UploadAsync("test-bucket", "key", source, null, TestContext.Current.CancellationToken, id)).State);
+    }
     private sealed class GeneratedInput(long length, bool disconnect) : Stream
     {
         private long _position;
