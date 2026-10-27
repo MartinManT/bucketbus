@@ -176,3 +176,45 @@ publish scripts check the bundled Linux/Windows SQLite assets; Linux executes a
 native WAL/FULL smoke transaction, while Windows only inspects x64 PE architecture.
 See [executed results and untested durability limits](PHASE1C1_IMPLEMENTATION.md).
 Power-loss hardware behavior and native Windows execution remain open gates.
+
+## Phase 1C.2a queue coverage
+
+Offline queue tests cover multiple selections/exact keys, FIFO/single worker,
+adding while active, pause/cancel, middle failures, source/destination/profile
+changes, target protection across profiles, and atomic never-started removal.
+Synthetic-PUT subprocess termination retains active uncertainty plus waiting Queued
+jobs without replay. Legacy schema fixtures verify preservation of history/safety
+metadata; a process killed inside the DDL transaction leaves schema 1 usable for a
+subsequent migration. Concurrent journal owners remain excluded. The headless UI
+selects five files and multiple objects, changes display preferences during work,
+pauses, removes a waiting job and explicitly continues. No live tests are needed.
+See [counts and native limits](PHASE1C2A_IMPLEMENTATION.md).
+
+## Phase 1C.2b executed retry faults
+
+Synthetic SDK transports and real disposable native destinations verify full-file
+GET retry after connection failure, short body, premature closure, timeout and
+429/500/502/503/504. Failure budgets, cancellation during GET/backoff, pause, FIFO,
+non-retryable remote/local failures, profile changes, cleanup/receipt uncertainty,
+parent/final substitution, publication ambiguity and journal barriers are covered.
+Subprocess kills during delay, second GET and creation-to-receipt persistence gap
+prove offline/no-replay restart and retained ownership evidence. Schema-2 legacy
+payloads load without a migration. PUT lost-response/5xx/timeout/cancel tests require
+exactly one PUT. Headless UI tests cover retry messages and shutdown cancellation.
+See [counts, classification and native gaps](PHASE1C2B_IMPLEMENTATION.md).
+
+## Phase 1C.3 multipart coverage
+
+Offline tests exercise planning above 5 GiB and at the 5 TiB application limit using
+logical streams, bounded part reads/offsets, exact keys, source checks, conditional
+completion, embedded HTTP-200 errors, lost acknowledgements, cancellation, journal
+barriers, remote part disagreement/pagination and owned abort verification.
+Coordinator/SQLite subprocess tests kill execution at creation, ID/part persistence,
+completion intent/sending/acknowledgement and inside actual save transactions.
+Existing schema-1 migration rollback tests remain in the suite; multipart adds no DDL.
+
+The independently gated multipart harness covers small multipart round trips,
+existing/concurrent destination protection, ListParts resume and owned abort.
+`eng/validate-integration.sh` excludes all live tests. No provider guarantee follows
+from the synthetic tests; see [qualification instructions](LIVE_QUALIFICATION.md#multipart-qualification)
+and [executed results](PHASE1C3_IMPLEMENTATION.md).

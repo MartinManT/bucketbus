@@ -78,3 +78,30 @@ No automatic replay, batch queue, retry scheduler or multipart support is includ
 Phase 1C.2 queue/retry work requires a separate authorization. Windows native execution,
 Fedora GUI acceptance of the new recovery panel, and power-loss qualification remain open.
 No live provider tests or infrastructure changes were performed in this increment.
+
+## Phase 1C.2a execution
+
+The selected-file sequential queue is explicitly authorized and implemented with
+schema-2 migration, one active transfer, explicit Start/Continue, pause-after-current,
+stop-on-error and removal of never-started jobs. See [results](PHASE1C2A_IMPLEMENTATION.md).
+Phase 1C.2b safe bounded retries/network impairment work remains separately gated;
+no multipart, recursive transfers, background replay or later increment is started.
+Native Windows and Fedora GUI qualification remain distinct from offline evidence.
+
+## Phase 1C.2b execution
+
+The user explicitly approved bounded download resilience. Three total whole-file
+GET attempts, typed eligibility, cancellable jittered backoff, native retry gates
+and schema-2 payload evidence are implemented and tested. PUT retry, multipart,
+partial resume, parallel scheduling and later increments remain outside scope.
+[Executed results and remaining native limits](PHASE1C2B_IMPLEMENTATION.md) apply;
+no live provider or infrastructure disruption was performed.
+
+## Phase 1C.3 execution
+
+Sequential streaming multipart uploads and explicit safe resume/abort extend the
+existing queue. Creation, part, completion and cleanup uncertainty are durable;
+startup never accesses credentials or S3. [Implementation and qualification limits](PHASE1C3_IMPLEMENTATION.md)
+separate offline evidence, packaging and unexecuted native/live gates. Fresh live
+endpoint and isolated write-scope authorization is required for multipart qualification.
+No later increment, infrastructure changes or automatic replay is started.

@@ -26,6 +26,11 @@ internal sealed class ExactKeyS3Client(AWSCredentials credentials, AmazonS3Confi
                 GetObjectMetadataRequest head => head.Key,
                 GetObjectRequest get => get.Key,
                 PutObjectRequest put => put.Key,
+                InitiateMultipartUploadRequest initiate => initiate.Key,
+                UploadPartRequest part => part.Key,
+                CompleteMultipartUploadRequest complete => complete.Key,
+                AbortMultipartUploadRequest abort => abort.Key,
+                ListPartsRequest list => list.Key,
                 _ => null
             };
             if (key is not null && key.StartsWith('/') && request.Endpoint.AbsolutePath != "/")

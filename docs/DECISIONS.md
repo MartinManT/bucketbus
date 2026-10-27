@@ -68,7 +68,7 @@ This register separates **confirmed user requirements/inventory**, **approved de
 
 ## ADR-006: Recovery before advanced resume
 
-**Status:** Approved MVP scope decision by the user on 2026-10-21. Phase 1C.1 implements the single-file durable-record/recovery subset; queue scheduling, bounded retries and multipart cleanup remain later work. See [executed scope and limitations](PHASE1C1_IMPLEMENTATION.md).
+**Status:** Approved MVP scope decision by the user on 2026-10-21. Phase 1C.1 implements durable single-file recovery; Phase 1C.2a adds the approved explicit sequential queue. Phase 1C.2b adds bounded whole-file GET retries; PUT retries and multipart cleanup remain outside these increments. See [executed scope and limitations](PHASE1C1_IMPLEMENTATION.md).
 
 **Decision:** Persist queued and interrupted jobs, accurate uncertain-outcome records, and known multipart cleanup obligations. Retry transient failures within bounded limits and retry failed multipart parts during the running session only where safe. Reconcile uncertain outcomes before restarting a transfer; never silently replay an uncertain write. After application restart, require user confirmation before restarting interrupted jobs, then restart the affected object from the beginning after reconciliation, required cleanup and renewed conflict/source checks. Defer cross-application-restart partial-byte upload/download resume to Phase 2.
 
@@ -202,3 +202,36 @@ These are qualitative planning estimates, not incident frequencies or measured p
 ## Phase 1B.2 authorization
 
 The user explicitly authorized single-file uploads/downloads as a pre-alpha increment, deferring ADR-006 durability to Phase 1C without changing its MVP contract. No overwrite fallback, multipart, SQLite, persistent queue, restart replay or resume is authorized. The user subsequently approved removing the end-user qualification-file gate: ordinary uploads attempt conditional creation with explicit profile credentials, while laboratory opt-in, independent target/scope approval and ownership manifests remain test-only requirements. ADR-008 continues to prohibit unconditional fallback; 412 collisions and explicit unsupported-request/permission failures stop the upload. Remote no-overwrite protection depends on provider enforcement and is not a universal compatibility guarantee. Downloads retain native no-replace commit.
+
+## Phase 1C.2a implementation disposition
+
+Explicit user authorization adds a durable FIFO selected-file queue to ADR-006's
+implemented subset. SQLite schema 2 adds a nullable unique sequence; legacy records
+retain null sequence and their existing recovery classification. New Queued records
+remain paused across restarts, distinct from claimed Pending and uncertain active
+work. No automatic retry/replay, overwrite fallback or multipart is approved by this
+increment. [Migration/crash evidence and limits](PHASE1C2A_IMPLEMENTATION.md) apply.
+
+## Phase 1C.2b implementation disposition
+
+Explicit authorization adds a fixed three-total-attempt GET policy for typed
+transient failures. Whole-file retry requires confirmed cleanup, preserved receipt,
+revalidated pinned destination and durable intent; it never implies partial resume,
+version identity across mutable-key reads, or permission to replay PUT. Optional
+attempt/backoff payload fields leave schema 2 intact. Restart remains offline and
+paused. [Classification, fault/crash results and limits](PHASE1C2B_IMPLEMENTATION.md)
+describe the implemented ADR-006 subset; no new ADR or generic retry framework.
+
+## Phase 1C.3 implementation disposition
+
+The user's explicit Phase 1C.3 authorization extends ADR-006 with **user-triggered
+partial multipart resume**, only for a durable upload ID, unchanged exact source
+and remote part-ledger agreement. This supersedes the earlier partial-resume
+deferral for this narrow upload case; automatic resume and partial downloads stay
+excluded. Unknown creation/part acknowledgements and completion are never replayed.
+The conservative fallback is retained evidence and unavailable actions, not weaker
+identity checks. SQLite schema 2 retains optional multipart JSON state; no migration
+is needed. Sequential parts, a 128 MiB threshold, 16 MiB growing part size and 5 TiB
+application ceiling are implemented engineering choices. Provider-specific limits
+and conditional completion remain live qualification requirements. No new ADR,
+configuration framework or end-user qualification file is introduced.

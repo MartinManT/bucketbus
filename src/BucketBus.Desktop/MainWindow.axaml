@@ -32,7 +32,7 @@
           </Flyout></Button.Flyout>
         </Button>
         <Button Content="Profiles" Command="{Binding ShowProfilesCommand}" />
-        <TextBlock Text="Pre-alpha · Single-file transfers" />
+        <TextBlock Text="Pre-alpha · Sequential transfers" />
       </StackPanel>
     </Grid>
 
@@ -85,20 +85,22 @@
     <Border Grid.Row="3" Padding="16" CornerRadius="6" BorderThickness="1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <StackPanel Spacing="6">
-        <TextBlock Text="Transfers" FontWeight="SemiBold" />
+        <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="Transfers" FontWeight="SemiBold" /><TextBlock Text="{Binding Transfers.QueueSummary}" Classes="secondary" /></StackPanel>
         <TextBlock x:Name="UploadProviderNotice" Classes="secondary" Text="Upload collision protection depends on the provider honoring create-only requests." TextWrapping="Wrap" />
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button x:Name="UploadFile" Content="Upload file (Ctrl+U)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.UploadCommand}" />
-          <Button x:Name="DownloadFile" Content="Download object (Ctrl+D)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.DownloadCommand}" />
-          <Button x:Name="CancelTransfer" Content="Cancel transfer" Command="{Binding Transfers.CancelCommand}" />
-        </StackPanel>
+        <WrapPanel Orientation="Horizontal">
+          <Button x:Name="UploadFile" Content="Add selected uploads (Ctrl+U)" Margin="0,0,6,0" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.UploadCommand}" />
+          <Button x:Name="DownloadFile" Content="Add selected downloads (Ctrl+D)" Margin="0,0,6,0" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.DownloadCommand}" />
+          <Button Content="Start / Continue" Command="{Binding Transfers.StartQueueCommand}" Margin="0,0,6,0" />
+          <Button Content="Pause after current" Command="{Binding Transfers.PauseQueueCommand}" Margin="0,0,6,0" />
+          <Button x:Name="CancelTransfer" Content="Cancel active" Command="{Binding Transfers.CancelCommand}" />
+        </WrapPanel>
         <TextBlock Text="{Binding Transfers.Source}" TextTrimming="CharacterEllipsis" />
         <TextBlock Text="{Binding Transfers.Destination}" TextTrimming="CharacterEllipsis" />
         <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding Transfers.Percent}" IsVisible="{Binding Transfers.IsBusy}" />
         <TextBlock Text="{Binding Transfers.Bytes}" ToolTip.Tip="{Binding Transfers.ExactBytes}" />
         <TextBlock x:Name="TransferStatus" Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
-        <Expander x:Name="TransferHistoryPanel" Header="Transfer history and recovery" HorizontalAlignment="Stretch">
-          <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+        <Expander x:Name="TransferHistoryPanel" Header="Transfer queue, history and recovery" HorizontalAlignment="Stretch">
+          <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="5">
             <TextBlock Text="{Binding Transfers.HistoryStatus}" TextWrapping="Wrap" />
             <ListBox x:Name="TransferHistory" ItemsSource="{Binding Transfers.History}" SelectedItem="{Binding Transfers.SelectedHistory}" MaxHeight="100">
@@ -106,11 +108,15 @@
             </ListBox>
             <ScrollViewer MaxHeight="100"><TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" /></ScrollViewer>
             <CheckBox Content="Confirm whole-file download restart (current remote content)" IsChecked="{Binding Transfers.ConfirmRestart}" />
-            <CheckBox Content="Allow vault unlock prompt for explicit recovery" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
+            <CheckBox Content="Confirm the selected multipart resume or abort action" IsChecked="{Binding Transfers.ConfirmMultipart}" />
+            <CheckBox Content="Allow vault unlock prompt for queue and recovery" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
             <WrapPanel Orientation="Horizontal">
+              <Button Content="Remove queued job" Command="{Binding Transfers.RemoveQueuedCommand}" />
               <Button Content="Reload history" Command="{Binding Transfers.ReloadHistoryCommand}" />
               <Button Content="Reconcile upload" Command="{Binding Transfers.ReconcileCommand}" />
               <Button Content="Restart download" Command="{Binding Transfers.RestartCommand}" />
+              <Button Content="Resume multipart upload" Command="{Binding Transfers.ResumeMultipartCommand}" />
+              <Button Content="Abort incomplete upload" Command="{Binding Transfers.AbortMultipartCommand}" />
               <Button Content="Dismiss resolved" Command="{Binding Transfers.DismissCommand}" />
             </WrapPanel>
           </StackPanel>

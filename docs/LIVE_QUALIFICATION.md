@@ -113,3 +113,35 @@ remain mandatory for every live run, regardless of prior test reports.
 No credentials belong in these JSON files. A crash may leave manifest-owned fixtures;
 inspect them explicitly instead of blindly repeating cleanup. The five-minute live
 suite budget and bounded cleanup do not establish long-transfer/WAN performance.
+
+## Multipart qualification
+
+Do not reuse prior live-write permission. Obtain fresh independent approval for an
+HTTPS endpoint and isolated `bucket/prefix/`, covering multipart creation, parts,
+conditional completion, ListParts, exact owned abort and fixture cleanup. The bucket
+must already exist; this harness does not create buckets or change infrastructure.
+Normal application uploads do not need these developer-only inputs.
+
+Use the existing WriteConfig JSON shape under ignored `docs/internal/`, with a named
+literal AWS shared-credentials profile and private evidence paths. Supply:
+
+- `BUCKETBUS_RUN_MULTIPART_TESTS=1`
+- `BUCKETBUS_MULTIPART_CONFIG` — absolute private config path
+- `BUCKETBUS_APPROVED_ENDPOINT` — independently approved HTTPS endpoint
+- `BUCKETBUS_APPROVED_MULTIPART_SCOPE` — independently approved `bucket/prefix/`
+
+After approval, run only `MultipartQualificationTests` with `Category=LiveS3`.
+The old `BUCKETBUS_RUN_WRITE_TESTS` and its scope approval do not enable this path.
+No configuration, credentials or network are read when multipart opt-in is absent.
+The harness generates a bounded 16 MiB + 17 byte source and unique keys. It exercises
+completion/read-back, existing-object collision, destination creation just before
+completion, explicit ListParts resume, owned abort and an unchanged generated
+sentinel. It never addresses pre-existing unrelated object keys.
+
+A private atomic `<ManifestFile>.multipart.json` records lifecycle evidence, all
+mutation intents and cleanup outcomes. Successful owned final objects are rechecked
+by operation ID/full SHA-256 before conditional deletion. Uncertain uploads are
+retained for inspection; failed qualification does not silently trigger abort or
+broad cleanup. Inspect the manifest for retained upload IDs, identity gaps and
+uncertain final objects before any separately authorized cleanup. Keep all raw
+evidence and laboratory identities private.

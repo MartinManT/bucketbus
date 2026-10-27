@@ -13,6 +13,7 @@ internal sealed class WindowsTransferFile : NativeTransferFile
     private bool _committed, _disposed;
     private string? _temporaryName;
     public override FileStream Stream { get; }
+    public override string SourceIdentity => $"windows:{Identity(_initial)}:{_initial.SizeHigh}:{_initial.SizeLow}:{_initial.WriteTime}";
     private WindowsTransferFile(List<SafeFileHandle> parents, SafeFileHandle file, string? finalPath)
     {
         _parents = parents; _finalPath = finalPath; _initial = Inspect(file);
@@ -48,12 +49,13 @@ internal sealed class WindowsTransferFile : NativeTransferFile
         try { file = Open(path, 0x80000000, 1, 3, 0x00200000); return new(parents, file, null); }
         catch { file?.Dispose(); foreach (var h in parents) h.Dispose(); throw; }
     }
-    internal static new WindowsTransferFile CreateDestination(string directory, string name)
+    internal static new WindowsTransferFile CreateDestination(string directory, string name, TemporaryReceipt? previous = null)
     {
         var parents = PinDirectory(directory);
         SafeFileHandle? file = null;
         try
         {
+            if (previous is not null) CheckRetry(parents, directory, name, previous);
             var temporaryName = ".bucketbus-" + Guid.NewGuid().ToString("N") + ".part";
             file = Open(Path.Combine(directory, temporaryName),
                 0xc0010000, 0, 1, 0x00200100); // read/write/delete; no sharing; CREATE_NEW
@@ -64,6 +66,23 @@ internal sealed class WindowsTransferFile : NativeTransferFile
     public override TemporaryReceipt? Receipt => _temporaryName is null ? null
         : new("windows", _temporaryName, Identity(Inspect(_parents[^1])), "", Identity(_initial));
     private static string Identity(Info value) => $"{value.Volume}:{value.IndexHigh}:{value.IndexLow}:{value.Created.dwHighDateTime}:{value.Created.dwLowDateTime}";
+    internal static void ValidateRetry(string directory, string name, TemporaryReceipt receipt)
+    {
+        var parents = PinDirectory(directory);
+        try { CheckRetry(parents, directory, name, receipt); }
+        finally { foreach (var parent in parents) parent.Dispose(); }
+    }
+    private static void CheckRetry(List<SafeFileHandle> parents, string directory, string name, TemporaryReceipt receipt)
+    {
+        if (receipt.Platform != "windows" || Identity(Inspect(parents[^1])) != receipt.ParentIdentity)
+            throw new TransferException(TransferError.DestinationChanged);
+        foreach (var entry in new[] { (Name: name, Error: TransferError.Conflict), (Name: receipt.Name, Error: TransferError.RecoveryUnavailable) })
+        {
+            using var file = CreateFileW(Path.Combine(directory, entry.Name), 0x80, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+            if (!file.IsInvalid) throw new TransferException(entry.Error);
+            if (Marshal.GetLastPInvokeError() != 2) Fail();
+        }
+    }
     internal static void Recover(string directory, string name, TemporaryReceipt receipt)
     {
         var parents = PinDirectory(directory);

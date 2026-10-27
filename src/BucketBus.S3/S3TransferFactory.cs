@@ -56,6 +56,8 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
     private string _host = "", _path = "";
     private HttpMethod _method = HttpMethod.Get;
     private int _attempts;
+    private Dictionary<string, string> _query = [];
+    private bool _conditional;
     public bool PutSent { get; private set; }
     public long? Length { get; private set; }
     public void Begin(string bucket, string key, HttpMethod method)
@@ -69,32 +71,55 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
             throw new TransferException(TransferError.InvalidName);
         _host = profile.Settings.Addressing == AddressingStyle.VirtualHosted ? bucket + "." + _endpoint.Host : _endpoint.Host;
         _path = (profile.Settings.Addressing == AddressingStyle.Path ? "/" + bucket : "") + "/" + key;
-        _method = method; _attempts = 0; Length = null;
+        _method = method; _attempts = 0; Length = null; _query = []; _conditional = method == HttpMethod.Put;
+    }
+    public void BeginMultipart(string bucket, string key, HttpMethod method, string? uploadId = null, int? part = null, int? marker = null, bool completing = false)
+    {
+        Begin(bucket, key, method); _conditional = completing;
+        if (uploadId is null) _query.Add("uploads", "");
+        else _query.Add("uploadId", uploadId);
+        if (part is { } number) _query.Add("partNumber", number.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (marker is { } value)
+        { _query.Add("part-number-marker", value.ToString(System.Globalization.CultureInfo.InvariantCulture)); _query.Add("max-parts", "1000"); }
+    }
+    private bool QueryMatches(Uri uri)
+    {
+        if (uri.Query.Length == 0) return _query.Count == 0;
+        var entries = uri.Query[1..].Split('&');
+        if (entries.Length != _query.Count) return false;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            var pair = entry.Split('=', 2); var name = Uri.UnescapeDataString(pair[0]);
+            var value = pair.Length == 1 ? "" : Uri.UnescapeDataString(pair[1]);
+            if (!seen.Add(name) || !_query.TryGetValue(name, out var expected) || value != expected) return false;
+        }
+        return true;
     }
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
     {
         var uri = request.RequestUri;
         if (uri is null || uri.Scheme != "https" || !string.Equals(uri.Host, _host, StringComparison.OrdinalIgnoreCase)
             || uri.Port != _endpoint.Port || uri.UserInfo.Length != 0 || request.Method != _method
-            || Uri.UnescapeDataString(uri.AbsolutePath) != _path || uri.Query.Length != 0
+            || Uri.UnescapeDataString(uri.AbsolutePath) != _path || !QueryMatches(uri)
             || ++_attempts != 1 || !request.Headers.TryGetValues("Authorization", out var auth)
             || !auth.Single().Contains($"/{profile.Settings.Region}/s3/aws4_request", StringComparison.Ordinal))
             throw new TransferException(TransferError.RemoteRejected);
-        if (_method == HttpMethod.Put && (!request.Headers.TryGetValues("If-None-Match", out var condition) || condition.Single() != "*"))
+        if (_conditional && (!request.Headers.TryGetValues("If-None-Match", out var condition) || condition.Single() != "*"))
             throw new TransferException(TransferError.RemoteRejected);
         token.ThrowIfCancellationRequested();
-        if (_method == HttpMethod.Put) PutSent = true;
+        if (_method == HttpMethod.Put && _query.Count == 0) PutSent = true;
         var response = await base.SendAsync(request, token).ConfigureAwait(false);
         if ((int)response.StatusCode is >= 300 and < 400) { response.Dispose(); throw new TransferException(TransferError.RemoteRejected); }
         Length = response.Content.Headers.ContentLength;
         // Successful GET stays streamed. Bound PUT/error bodies before SDK XML parsing.
-        if (_method == HttpMethod.Get && response.IsSuccessStatusCode) return response;
+        if (_method == HttpMethod.Get && _query.Count == 0 && response.IsSuccessStatusCode) return response;
         try
         {
             await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
             using var buffer = new MemoryStream(); var chunk = new byte[4096]; int n;
             while ((n = await stream.ReadAsync(chunk, token).ConfigureAwait(false)) != 0)
-            { if (buffer.Length + n > 65536) throw new TransferException(TransferError.RemoteRejected); buffer.Write(chunk, 0, n); }
+            { if (buffer.Length + n > (_query.Count > 0 ? 2 * 1024 * 1024 : 65536)) throw new TransferException(TransferError.RemoteRejected); buffer.Write(chunk, 0, n); }
             var content = new ByteArrayContent(buffer.ToArray());
             foreach (var h in response.Content.Headers) content.Headers.TryAddWithoutValidation(h.Key, h.Value);
             response.Content.Dispose(); response.Content = content; return response;

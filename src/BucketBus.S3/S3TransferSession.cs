@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -6,7 +8,7 @@ using BucketBus.Core;
 
 namespace BucketBus.S3;
 
-internal sealed class S3TransferSession(AmazonS3Client client,
+internal sealed partial class S3TransferSession(AmazonS3Client client,
     TransferTransport transport, IDisposable owner, TimeSpan deadline) : IObjectTransferSession
 {
     private int _used;
@@ -113,7 +115,7 @@ internal sealed class S3TransferSession(AmazonS3Client client,
             var result = await CopyVerified(response, destination, progress, timeout.Token).ConfigureAwait(false);
             return new(TransferState.Completed, Verification: result.Verification);
         }
-        catch (Exception e) { return new(token.IsCancellationRequested ? TransferState.Cancelled : TransferState.Failed, Error(e, token, timeout.Token)); }
+        catch (Exception e) { return new(token.IsCancellationRequested ? TransferState.Cancelled : TransferState.Failed, DownloadError(e, token, timeout.Token)); }
     }
     private async Task<(string Hash, string Verification)> CopyVerified(GetObjectResponse response, Stream destination, IProgress<TransferProgress>? progress, CancellationToken token)
     {
@@ -134,7 +136,7 @@ internal sealed class S3TransferSession(AmazonS3Client client,
             progress?.Report(new(total, length, "Downloading"));
         }
         token.ThrowIfCancellationRequested();
-        if (total != length) throw new TransferException(TransferError.IntegrityMismatch);
+        if (total != length) throw new TransferException(TransferError.TruncatedResponse);
         var hash = Convert.ToBase64String(sha.GetHashAndReset());
         var verification = "Length verified; no compatible full-object checksum supplied (content equality not established).";
         if (response.ChecksumSHA256 is { Length: > 0 } expected && !expected.Contains('-'))
@@ -151,7 +153,43 @@ internal sealed class S3TransferSession(AmazonS3Client client,
             try { return await response.ResponseStream.ReadAsync(buffer, idle.Token).ConfigureAwait(false); }
             catch (Exception) when (response.ResponseMetadata?.ChecksumValidationStatus == Amazon.Runtime.ChecksumValidationStatus.INVALID)
             { throw new TransferException(TransferError.IntegrityMismatch); }
+            catch (IOException e)
+            {
+                if (idle.IsCancellationRequested) throw new OperationCanceledException(idle.Token);
+                throw new TransferException(DownloadError(e, default, default, remoteRead: true));
+            }
         }
+    }
+    private static TransferError DownloadError(Exception error, CancellationToken user, CancellationToken deadline, bool remoteRead = false)
+    {
+        var chain = new List<Exception>();
+        for (var current = error; current is not null && chain.Count < 16; current = current.InnerException) chain.Add(current);
+        if (chain.Count == 16 && chain[^1].InnerException is not null) return TransferError.NetworkFailure;
+        if (chain.OfType<TransferException>().FirstOrDefault() is { } failure) return failure.Error;
+        if (chain.Any(e => e is AuthenticationException || e is HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } or HttpIOException { HttpRequestError: HttpRequestError.SecureConnectionError })) return TransferError.TlsFailure;
+        var service = chain.OfType<AmazonS3Exception>().FirstOrDefault();
+        if (service?.ErrorCode is "InvalidAccessKeyId" or "SignatureDoesNotMatch" or "ExpiredToken" or "InvalidToken") return TransferError.AuthenticationFailed;
+        var status = service is not null && (int)service.StatusCode != 0 ? service.StatusCode : chain.OfType<HttpRequestException>().FirstOrDefault()?.StatusCode;
+        if (status is not null)
+            return (int)status.Value switch
+            {
+                401 => TransferError.AuthenticationFailed, 403 => TransferError.PermissionDenied, 404 => TransferError.ObjectMissing,
+                429 => TransferError.RateLimited, 500 or 502 or 503 or 504 => TransferError.TransientService, _ => TransferError.RemoteRejected
+            };
+        if (chain.Any(e => e is OperationCanceledException) || deadline.IsCancellationRequested)
+            return user.IsCancellationRequested ? TransferError.None : TransferError.Timeout;
+        foreach (var item in chain)
+        {
+            var kind = item switch { HttpRequestException request => request.HttpRequestError, HttpIOException io => io.HttpRequestError, _ => HttpRequestError.Unknown };
+            if (kind == HttpRequestError.ResponseEnded) return TransferError.TruncatedResponse;
+            if (kind is HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError) return TransferError.ConnectionInterrupted;
+            if (item is HttpIOException) return TransferError.NetworkFailure; // Unknown/protocol failures are not assumed transient.
+            if (item is SocketException socket && socket.SocketErrorCode is SocketError.ConnectionAborted or SocketError.ConnectionReset
+                or SocketError.ConnectionRefused or SocketError.NetworkDown or SocketError.NetworkUnreachable or SocketError.HostUnreachable
+                or SocketError.HostNotFound or SocketError.TryAgain or SocketError.TimedOut) return TransferError.ConnectionInterrupted;
+        }
+        // Only a read from the remote response stream gives a plain IOException transport meaning.
+        return remoteRead && error is IOException ? TransferError.ConnectionInterrupted : TransferError.NetworkFailure;
     }
     private static TransferError Error(Exception e, CancellationToken user, CancellationToken deadline) => e switch
     {

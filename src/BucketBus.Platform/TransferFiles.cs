@@ -13,6 +13,7 @@ public sealed class TransferFiles : ITransferFiles
             var file = NativeTransferFile.OpenSource(path);
             try
             {
+                if (file.Stream.Length > MultipartPlan.MaximumObject) throw new TransferException(TransferError.RemoteRejected);
                 var hashes = await HashAsync(file.Stream, token).ConfigureAwait(false);
                 file.Validate(); file.Stream.Position = 0;
                 return new Source(file, hashes.Sha, hashes.Md5);
@@ -21,20 +22,39 @@ public sealed class TransferFiles : ITransferFiles
         }
         catch (Exception e) { throw Map(e); }
     }, token);
-    public Task<ITransferDestination> CreateDestinationAsync(string directory, string name, CancellationToken token) => Task.Run<ITransferDestination>(() =>
+    public Task<ITransferDestination> CreateDestinationAsync(string directory, string name, CancellationToken token, TemporaryReceipt? previous = null) => Task.Run<ITransferDestination>(() =>
     {
         token.ThrowIfCancellationRequested(); TransferNames.Validate(name);
-        try { return new Destination(NativeTransferFile.CreateDestination(directory, name)); }
+        if (previous is not null) ValidateReceipt(previous);
+        try { return new Destination(NativeTransferFile.CreateDestination(directory, name, previous)); }
         catch (Exception e) { throw Map(e); }
     }, token);
+    public Task ValidateRetryDestinationAsync(TransferRecord record, CancellationToken token) => Task.Run(() =>
+    {
+        token.ThrowIfCancellationRequested();
+        if (record.Upload || record.Temporary is not { } receipt) throw new TransferException(TransferError.RecoveryUnavailable);
+        ValidateReceipt(receipt);
+        try
+        {
+            if (OperatingSystem.IsLinux() && receipt.Platform == "linux") LinuxTransferFile.ValidateRetry(record.LocalPath, TransferNames.FromKey(record.Key), receipt);
+            else if (OperatingSystem.IsWindows() && receipt.Platform == "windows") WindowsTransferFile.ValidateRetry(record.LocalPath, TransferNames.FromKey(record.Key), receipt);
+            else throw new TransferException(TransferError.UnsupportedFilesystem);
+        }
+        catch (Exception e) { throw Map(e); }
+    }, token);
+    private static void ValidateReceipt(TemporaryReceipt receipt)
+    {
+        var suffix = receipt.Platform == "linux" ? ".tmp" : ".part";
+        if (!receipt.Name.StartsWith(".bucketbus-", StringComparison.Ordinal) || !receipt.Name.EndsWith(suffix, StringComparison.Ordinal)
+            || receipt.Name.Length != 11 + 32 + suffix.Length || !Guid.TryParseExact(receipt.Name[11..^suffix.Length], "N", out _))
+            throw new TransferException(TransferError.RecoveryUnavailable);
+        TransferNames.Validate(receipt.Name);
+    }
     public Task RecoverDestinationAsync(TransferRecord record, CancellationToken token) => Task.Run(() =>
     {
         token.ThrowIfCancellationRequested();
         if (record.Upload || record.Temporary is not { } receipt) throw new TransferException(TransferError.RecoveryUnavailable);
-        var suffix = receipt.Platform == "linux" ? ".tmp" : ".part";
-        if (!receipt.Name.StartsWith(".bucketbus-", StringComparison.Ordinal) || !receipt.Name.EndsWith(suffix, StringComparison.Ordinal)
-            || receipt.Name.Length != 11 + 32 + suffix.Length || !Guid.TryParseExact(receipt.Name[11..^suffix.Length], "N", out _)) throw new TransferException(TransferError.RecoveryUnavailable);
-        TransferNames.Validate(receipt.Name);
+        ValidateReceipt(receipt);
         try
         {
             if (OperatingSystem.IsLinux() && receipt.Platform == "linux") LinuxTransferFile.Recover(record.LocalPath, TransferNames.FromKey(record.Key), receipt);
@@ -65,6 +85,8 @@ public sealed class TransferFiles : ITransferFiles
         public long Length => file.Stream.Length;
         public string Sha256 => sha;
         public string Md5 => md5;
+        public string? SourceIdentity => file.SourceIdentity;
+        public Task ValidateIdentityAsync(CancellationToken token) => Task.Run(() => { token.ThrowIfCancellationRequested(); file.Validate(); }, token);
         public async Task ValidateAsync(CancellationToken token)
         {
             file.Validate(); file.Stream.Position = 0;
@@ -93,12 +115,13 @@ internal abstract class NativeTransferFile : IDisposable
 {
     public abstract FileStream Stream { get; }
     public virtual TemporaryReceipt? Receipt => null;
+    public abstract string SourceIdentity { get; }
     public bool CleanupRequired { get; protected set; }
     public abstract void Validate();
     public abstract void Commit();
     public abstract void Dispose();
     public static NativeTransferFile OpenSource(string path) => OperatingSystem.IsLinux() ? LinuxTransferFile.OpenSource(path)
         : OperatingSystem.IsWindows() ? WindowsTransferFile.OpenSource(path) : throw new TransferException(TransferError.UnsupportedFilesystem);
-    public static NativeTransferFile CreateDestination(string directory, string name) => OperatingSystem.IsLinux() ? LinuxTransferFile.CreateDestination(directory, name)
-        : OperatingSystem.IsWindows() ? WindowsTransferFile.CreateDestination(directory, name) : throw new TransferException(TransferError.UnsupportedFilesystem);
+    public static NativeTransferFile CreateDestination(string directory, string name, TemporaryReceipt? previous = null) => OperatingSystem.IsLinux() ? LinuxTransferFile.CreateDestination(directory, name, previous)
+        : OperatingSystem.IsWindows() ? WindowsTransferFile.CreateDestination(directory, name, previous) : throw new TransferException(TransferError.UnsupportedFilesystem);
 }

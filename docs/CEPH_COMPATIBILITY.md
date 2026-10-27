@@ -128,3 +128,16 @@ conditional creation without installed qualification evidence. They never fall b
 to unconditional PUT. Collision protection depends on the provider enforcing the
 condition; a success response and matching read-back do not establish that an older
 object was never replaced. Laboratory qualification remains separately authorized.
+
+## Multipart qualification status (Phase 1C.3)
+
+**NOT EXECUTED against Ceph in this increment.** Earlier Squid 19.2.7 single-PUT
+qualification does not establish conditional CompleteMultipartUpload behavior.
+The new separately gated harness must prove that an existing object and a destination
+created between initiation and completion remain unchanged when completion sends
+`If-None-Match: *`. It also checks SHA-256 read-back, ListParts agreement and abort
+absence for exact owned IDs. Rejection fails safely; ignored conditions can overwrite
+on a nonconforming provider and cannot be repaired by read-back. No end-user
+qualification files or capability database are required. Smaller provider quotas/
+object limits may reject uploads below BucketBus's 5 TiB ceiling. Test actual builds
+and configurations before making compatibility claims.

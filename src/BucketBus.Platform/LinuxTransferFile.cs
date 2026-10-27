@@ -16,6 +16,7 @@ internal sealed class LinuxTransferFile : NativeTransferFile
     private readonly Stat _temporaryIdentity;
     private bool _disposed;
     public override FileStream Stream { get; }
+    public override string SourceIdentity => $"linux:{Identity(_initial)}:{_initial.Size}:{_initial.ChangeSeconds}:{_initial.ChangeNanoseconds}:{_initial.ModifiedSeconds}:{_initial.ModifiedNanoseconds}";
     private LinuxTransferFile(SafeFileHandle directory, SafeFileHandle file, string name,
         SafeFileHandle? temporaryDirectory = null, string? temporaryName = null)
     {
@@ -53,7 +54,7 @@ internal sealed class LinuxTransferFile : NativeTransferFile
         }
         catch { file?.Dispose(); parent.Dispose(); throw; }
     }
-    internal static new LinuxTransferFile CreateDestination(string directory, string name)
+    internal static new LinuxTransferFile CreateDestination(string directory, string name, TemporaryReceipt? previous = null)
     {
         var parent = OpenDirectory(directory);
         SafeFileHandle? temp = null, file = null;
@@ -61,6 +62,7 @@ internal sealed class LinuxTransferFile : NativeTransferFile
         var created = false;
         try
         {
+            if (previous is not null) CheckRetry(parent, name, previous);
             if (statx(parent, name, 0x100, 0x7ff, out _) == 0) throw new TransferException(TransferError.Conflict);
             if (Marshal.GetLastPInvokeError() != 2) Fail();
             if (mkdirat(parent, unique, 0x1c0) != 0) Fail(); // 0700, exclusive randomized directory
@@ -87,6 +89,17 @@ internal sealed class LinuxTransferFile : NativeTransferFile
         }
     }
     private static string Identity(Stat value) => $"{value.DeviceMajor}:{value.DeviceMinor}:{value.Inode}:{value.BirthSeconds}:{value.BirthNanoseconds}";
+    internal static void ValidateRetry(string directory, string name, TemporaryReceipt receipt)
+    { using var parent = OpenDirectory(directory); CheckRetry(parent, name, receipt); }
+    private static void CheckRetry(SafeFileHandle parent, string name, TemporaryReceipt receipt)
+    {
+        if (receipt.Platform != "linux" || Identity(Info(parent)) != receipt.ParentIdentity)
+            throw new TransferException(TransferError.DestinationChanged);
+        if (statx(parent, name, 0x100, 0xfff, out _) == 0) throw new TransferException(TransferError.Conflict);
+        if (Marshal.GetLastPInvokeError() != 2) Fail();
+        if (statx(parent, receipt.Name, 0x100, 0xfff, out _) == 0) throw new TransferException(TransferError.RecoveryUnavailable);
+        if (Marshal.GetLastPInvokeError() != 2) Fail();
+    }
     internal static void Recover(string directory, string name, TemporaryReceipt receipt)
     {
         using var parent = OpenDirectory(directory);

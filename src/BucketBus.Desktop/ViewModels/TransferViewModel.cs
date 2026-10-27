@@ -9,9 +9,12 @@ namespace BucketBus.Desktop.ViewModels;
 public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDisposable
 {
     private readonly TransferCoordinator _coordinator;
+    private readonly TransferQueue _queue;
+    private bool _enqueuing, _queueRun;
+    private int _completedThisRun;
     private readonly LocalBrowserViewModel _local;
     private readonly RemoteBrowserViewModel _remote;
-    private CancellationTokenSource? _operation;
+    private CancellationTokenSource? _operation, _preparation;
     private bool _busy, _disposed;
     private string _source = "", _destination = "", _status = "One file at a time. Transfers are recorded; interrupted work is never automatically replayed.";
     private readonly DisplayOptions _display;
@@ -25,9 +28,13 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     public TransferHistoryRow? SelectedHistory
     {
         get => _selectedHistory;
-        set { if (SetProperty(ref _selectedHistory, value)) { ConfirmRestart = false; OnPropertyChanged(nameof(RecoveryDetails)); NotifyCommands(); } }
+        set { if (SetProperty(ref _selectedHistory, value)) { ConfirmRestart = false; ConfirmMultipart = false; OnPropertyChanged(nameof(RecoveryDetails)); NotifyCommands(); } }
     }
     public bool ConfirmRestart { get => _confirmRestart; set { SetProperty(ref _confirmRestart, value); NotifyCommands(); } }
+    private bool _confirmMultipart;
+    public bool ConfirmMultipart { get => _confirmMultipart; set { SetProperty(ref _confirmMultipart, value); NotifyCommands(); } }
+    public IAsyncRelayCommand ResumeMultipartCommand { get; }
+    public IAsyncRelayCommand AbortMultipartCommand { get; }
     public bool AllowRecoveryUnlock { get; set; }
     public string HistoryStatus { get => _historyStatus; private set => SetProperty(ref _historyStatus, value); }
     public string RecoveryDetails => SelectedHistory?.Details ?? "Select a record to inspect its target and recovery options.";
@@ -52,29 +59,40 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
         }
     }
     public double Percent { get => _percent; private set => SetProperty(ref _percent, value); }
+    public bool IsEnqueuing { get => _enqueuing; private set { SetProperty(ref _enqueuing, value); NotifyCommands(); } }
+    public string QueueSummary => $"{History.Count(r => r.Record.State == TransferState.Queued)} queued · {(IsBusy ? "1 active" : "paused / idle")} · {_completedThisRun} completed this run";
+    public IAsyncRelayCommand StartQueueCommand { get; }
+    public IRelayCommand PauseQueueCommand { get; }
+    public IAsyncRelayCommand RemoveQueuedCommand { get; }
     public IAsyncRelayCommand UploadCommand { get; }
     public IAsyncRelayCommand DownloadCommand { get; }
     public IRelayCommand CancelCommand { get; }
-    public TransferViewModel(TransferCoordinator coordinator, LocalBrowserViewModel local, RemoteBrowserViewModel remote, DisplayOptions? display = null)
+    public TransferViewModel(TransferCoordinator coordinator, TransferQueue queue, LocalBrowserViewModel local, RemoteBrowserViewModel remote, DisplayOptions? display = null)
     {
-        _coordinator = coordinator; _local = local; _remote = remote;
+        _coordinator = coordinator; _queue = queue; _local = local; _remote = remote;
         _display = display ?? new(); _display.PropertyChanged += DisplayChanged;
         ReloadHistoryCommand = new AsyncRelayCommand(InitializeAsync, () => !_disposed && !IsBusy);
         ReconcileCommand = new AsyncRelayCommand(() => RecoverAsync(false), () => HistoryReady && SelectedHistory?.Record.CanReconcile == true);
         RestartCommand = new AsyncRelayCommand(() => RecoverAsync(true), () => HistoryReady && ConfirmRestart && SelectedHistory?.Record.CanRestart == true);
+        ResumeMultipartCommand = new AsyncRelayCommand(() => RecoverMultipartAsync(false), () => HistoryReady && ConfirmMultipart && SelectedHistory?.Record.CanResumeMultipart == true);
+        AbortMultipartCommand = new AsyncRelayCommand(() => RecoverMultipartAsync(true), () => HistoryReady && ConfirmMultipart && SelectedHistory?.Record.CanAbortMultipart == true);
         DismissCommand = new AsyncRelayCommand(DismissAsync, () => HistoryReady && SelectedHistory?.Record.Resolved == true);
-        UploadCommand = new AsyncRelayCommand(() => RunAsync(true), () => Ready && _local.SelectedRows.Count == 1
-            && _local.SelectedRows[0].Entry.Kind == LocalEntryKind.File && !_local.IsBusy);
-        DownloadCommand = new AsyncRelayCommand(() => RunAsync(false), () => Ready && _remote.SelectedRow?.Kind == BrowserRowKind.Object
+        StartQueueCommand = new AsyncRelayCommand(StartQueueAsync, () => HistoryReady && History.Any(r => r.Record.State == TransferState.Queued));
+        PauseQueueCommand = new RelayCommand(() => { _queue.PauseAfterCurrent(); Status = "Pausing after the current transfer completes."; }, () => _queueRun);
+        RemoveQueuedCommand = new AsyncRelayCommand(RemoveQueuedAsync, () => !_disposed && _journalAvailable && SelectedHistory?.Record.State == TransferState.Queued);
+        UploadCommand = new AsyncRelayCommand(() => EnqueueAsync(true), () => Ready && _local.SelectedRows.Count > 0
+            && _local.SelectedRows.All(r => r.Entry.Kind == LocalEntryKind.File && _local.Rows.Contains(r)) && !_local.IsBusy);
+        DownloadCommand = new AsyncRelayCommand(() => EnqueueAsync(false), () => Ready && DownloadSelection().Length > 0
+            && DownloadSelection().All(r => r.Kind == BrowserRowKind.Object && _remote.Rows.Contains(r))
             && _local.DirectoryPath.Length != 0 && _local.State is LocalBrowserState.Ready or LocalBrowserState.Empty);
-        CancelCommand = new RelayCommand(() => _operation?.Cancel(), () => IsBusy);
+        CancelCommand = new RelayCommand(() => { _queue.CancelActive(); _operation?.Cancel(); }, () => IsBusy);
         _local.PropertyChanged += Changed; _remote.PropertyChanged += Changed;
-        _local.SelectedRows.CollectionChanged += SelectionChanged;
+        _local.SelectedRows.CollectionChanged += SelectionChanged; _remote.SelectedRows.CollectionChanged += SelectionChanged;
     }
-    private bool Ready => _journalAvailable && !_disposed && !IsBusy && _remote.IsConnected && _remote.ActiveBucket is not null && !_remote.IsBusy;
+    private bool Ready => _journalAvailable && !_disposed && !IsEnqueuing && _remote.IsConnected && _remote.ActiveBucket is not null && !_remote.IsBusy;
     private void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => NotifyCommands();
     private void SelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => NotifyCommands();
-    private void NotifyCommands() { UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); }
+    private void NotifyCommands() { ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); }
     private bool HistoryReady => !_disposed && !IsBusy && _journalAvailable;
     public async Task InitializeAsync()
     {
@@ -83,10 +101,13 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
             var records = await _coordinator.HistoryAsync(CancellationToken.None);
             if (_disposed) return;
             var selected = SelectedHistory?.Record.Id;
-            History.Clear(); foreach (var record in records) History.Add(new(record, _display));
+            var ordered = records.OrderBy(r => r.QueueOrder is not null ? 0 : 1).ThenBy(r => r.QueueOrder).ThenByDescending(r => r.Created).ToArray();
+            History.Clear(); var position = 0;
+            foreach (var record in ordered)
+                History.Add(new(record, _display) { Position = record.State == TransferState.Queued ? ++position : null });
             SelectedHistory = History.FirstOrDefault(r => r.Record.Id == selected);
             _journalAvailable = true;
-            HistoryStatus = $"{History.Count} recorded transfers. Recovery requires an explicit action; nothing was replayed.";
+            HistoryStatus = $"{History.Count} recorded transfers. Start / Continue runs only queued jobs; recovery remains explicit.";
         }
         catch { _journalAvailable = false; HistoryStatus = "Transfer journal unavailable. Transfers are blocked. Close other BucketBus instances; preserve the journal for diagnosis. BB-JOURNAL."; }
         NotifyCommands();
@@ -104,6 +125,25 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
         catch { Status = "Recovery remains unresolved. No automatic replay was attempted."; }
         finally { _operation = null; IsBusy = false; ConfirmRestart = false; await InitializeAsync(); }
     }
+    private async Task RecoverMultipartAsync(bool abort)
+    {
+        if (SelectedHistory is not { } selected || !HistoryReady || !ConfirmMultipart) return;
+        using var cancellation = new CancellationTokenSource(); _operation = cancellation; IsBusy = true;
+        var updates = new Progress<TransferProgress>(p =>
+        {
+            if (_disposed || _operation != cancellation) return;
+            Status = p.Stage; _progressBytes = p.Bytes; _progressTotal = p.Total; NotifyByteDisplay();
+            Percent = p.Total > 0 ? Math.Min(99, 100d * p.Bytes / p.Total.Value) : 0;
+        });
+        try
+        {
+            Status = abort ? "Checking and aborting only the recorded incomplete upload…" : "Checking source identity and reconciling remote parts…";
+            var result = await _coordinator.RecoverMultipartAsync(selected.Record.Id, abort, true, AllowRecoveryUnlock, updates, cancellation.Token);
+            if (!_disposed) { Status = Describe(result); if (result.State == TransferState.Completed) Percent = 100; }
+        }
+        catch { Status = "Multipart recovery remains unresolved; retain the record for inspection."; }
+        finally { _operation = null; IsBusy = false; ConfirmMultipart = false; await InitializeAsync(); }
+    }
     private async Task DismissAsync()
     {
         if (SelectedHistory is not { } selected || !HistoryReady || !selected.Record.Resolved) return;
@@ -112,43 +152,109 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
         catch { HistoryStatus = "History could not be dismissed; the journal was preserved. BB-JOURNAL."; }
         finally { IsBusy = false; await InitializeAsync(); }
     }
-    private async Task RunAsync(bool upload)
+    private BrowserRow[] DownloadSelection() => _remote.SelectedRows.Count > 0 ? _remote.SelectedRows.ToArray()
+        : _remote.SelectedRow is { } row ? [row] : [];
+    private async Task EnqueueAsync(bool upload)
     {
         var profile = _remote.ActiveProfile; var bucket = _remote.ActiveBucket;
-        if (profile is null || bucket is null || _disposed || IsBusy) return;
-        var directory = _local.DirectoryPath;
-        var prefix = _remote.ActivePrefix;
-        var key = upload ? prefix + _local.SelectedRows[0].Entry.Name : _remote.SelectedRow!.Key;
-        var path = upload ? _local.SelectedRows[0].Entry.FullPath : directory;
-        Source = BrowserText.Display(upload ? path : bucket + "/" + key);
-        Destination = BrowserText.Display(upload ? bucket + "/" + key : Path.Combine(directory, key[(key.LastIndexOf('/') + 1)..]));
-        using var cancellation = new CancellationTokenSource(); _operation = cancellation;
-        IsBusy = true; Percent = 0; _progressBytes = 0; _progressTotal = null; NotifyByteDisplay(); Status = "Preparing transfer…";
+        if (profile is null || bucket is null || _disposed || IsEnqueuing) return;
+        var prefix = _remote.ActivePrefix; var directory = _local.DirectoryPath;
+        // Snapshot explicitly selected, currently visible identities once, before any await.
+        var localSelection = _local.SelectedRows.ToHashSet(); var remoteSelection = DownloadSelection().ToHashSet();
+        var targets = upload ? _local.Rows.Where(r => localSelection.Contains(r) && r.Entry.Kind == LocalEntryKind.File)
+            .Select(r => (Key: prefix + r.Entry.Name, Path: r.Entry.FullPath, Size: r.Entry.Size)).ToArray()
+            : _remote.Rows.Where(r => remoteSelection.Contains(r) && r.Kind == BrowserRowKind.Object)
+                .Select(r => (Key: r.Key, Path: directory, Size: r.Size)).ToArray();
+        if (targets.Length == 0) return;
+        using var preparation = new CancellationTokenSource(); _preparation = preparation;
+        IsEnqueuing = true; var added = 0;
+        Status = upload ? "Preparing queue entries; reading source fingerprints…" : "Recording selected downloads…";
         try
         {
-            var progress = new ThrottledProgress(p =>
+            foreach (var target in targets)
             {
-                if (_operation != cancellation || _disposed) return;
-                _progressBytes = p.Bytes; _progressTotal = p.Total; NotifyByteDisplay();
-                Percent = p.Total > 0 ? Math.Min(100, 100d * p.Bytes / p.Total.Value) : 0;
-                Status = p.Stage + "…";
-            });
-            var result = await _coordinator.RunAsync(profile, bucket, key, path, upload, _remote.AllowUnlock, progress, cancellation.Token);
-            progress.Flush();
-            _operation = null; // discard queued progress after terminal state
-            if (_disposed) return;
-            Status = Describe(result);
-            if (result.State == TransferState.Completed)
-            {
-                Percent = 100;
-                // Browsing is independent: never navigate the user back to a previous location.
-                if (upload && _remote.ActiveProfile == profile && _remote.ActiveBucket == bucket && _remote.ActivePrefix == prefix && !_remote.IsBusy)
-                    await _remote.RefreshCommand.ExecuteAsync(null);
-                if (!upload && _local.DirectoryPath == directory && !_local.IsBusy) await _local.RefreshCommand.ExecuteAsync(null);
+                if (_disposed) break;
+                await _queue.EnqueueAsync(profile, bucket, target.Key, target.Path, upload, preparation.Token, target.Size); added++;
             }
+            Status = $"Added {added} queued {(upload ? "uploads" : "downloads")}. Start / Continue to process them.";
         }
-        catch (Exception) { Status = "Outcome Unknown. Inspect the destination before retrying. Code BB-TRANSFER."; }
-        finally { _operation = null; IsBusy = false; await InitializeAsync(); }
+        catch (OperationCanceledException) { Status = $"Queue preparation cancelled; {added} recorded jobs retained."; }
+        catch (TransferException e) { Status = $"Added {added} jobs; enqueue stopped. " + Describe(new(TransferState.Failed, e.Error)); }
+        catch { Status = $"Added {added} jobs; durable enqueue failed. Existing jobs were retained. BB-JOURNAL."; }
+        finally { _preparation = null; IsEnqueuing = false; await InitializeAsync(); }
+    }
+    private async Task RemoveQueuedAsync()
+    {
+        if (SelectedHistory is not { Record.State: TransferState.Queued } selected) return;
+        try { Status = await _queue.RemoveAsync(selected.Record.Id, CancellationToken.None) ? "Removed never-started queued job; no data deleted." : "Job already started or was removed; reload its status."; }
+        catch { Status = "Could not remove queued job. BB-JOURNAL."; }
+        await InitializeAsync();
+    }
+    private async Task StartQueueAsync()
+    {
+        if (!HistoryReady) return;
+        using var cancellation = new CancellationTokenSource(); _operation = cancellation; _queueRun = true; _completedThisRun = 0; IsBusy = true;
+        Status = "Processing queued jobs sequentially…";
+        var updates = new QueueDisplayUpdate(update =>
+        {
+            if (_disposed || _operation != cancellation) return;
+            var row = History.FirstOrDefault(r => r.Record.Id == update.Record.Id);
+            if (row is null) { row = new(update.Record, _display); History.Add(row); }
+            row.UpdateRecord(update.Record);
+            if (update.Result is not null)
+            {
+                if (update.Result.State == TransferState.Completed) { _completedThisRun++; Percent = 100; }
+                Status = Describe(update.Result);
+
+            }
+            else
+            {
+                Source = BrowserText.Display(Path.GetFileName(update.Record.Upload ? update.Record.LocalPath : update.Record.Key));
+                Destination = update.Record.Upload ? "S3 upload · expand history for exact target" : "Local download · expand history for exact target";
+                if (update.Progress is { } progress) Status = progress.Stage;
+                _progressBytes = update.Progress?.Bytes ?? 0; _progressTotal = update.Progress?.Total ?? update.Record.Total; NotifyByteDisplay();
+                Percent = _progressTotal > 0 ? Math.Min(99, 100d * _progressBytes.Value / _progressTotal.Value) : 0;
+            }
+            var position = 0; foreach (var item in History) item.Position = item.Record.State == TransferState.Queued ? ++position : null;
+            NotifyCommands();
+        });
+        try
+        {
+            var result = await _queue.RunAsync(AllowRecoveryUnlock, updates, cancellation.Token);
+            _completedThisRun = result.Completed;
+            if (result.LastRecord is { } last)
+            {
+                _progressBytes = last.Bytes; _progressTotal = last.Total; NotifyByteDisplay();
+                Percent = last.State == TransferState.Completed ? 100 : last.Total > 0 ? Math.Min(99, 100d * last.Bytes / last.Total.Value) : 0;
+                if (last.State == TransferState.Completed) await RefreshAffectedAsync(last);
+            }
+            Status = result.StoppedBy is { } stopped ? "Queue stopped. " + Describe(stopped)
+                : $"Queue paused / idle. {result.Completed} completed this run. Continue requires an explicit action.";
+        }
+        catch { Status = "Queue stopped; inspect durable records. BB-JOURNAL."; }
+        finally { _operation = null; _queueRun = false; IsBusy = false; await InitializeAsync(); }
+    }
+    private async Task RefreshAffectedAsync(TransferRecord record)
+    {
+        if (record.Upload && _remote.ActiveProfile?.Id == record.ProfileId && _remote.ActiveBucket == record.Bucket
+            && record.Key.StartsWith(_remote.ActivePrefix, StringComparison.Ordinal) && !_remote.IsBusy)
+            await _remote.RefreshCommand.ExecuteAsync(null);
+        else if (!record.Upload && _local.DirectoryPath == record.LocalPath && !_local.IsBusy) await _local.RefreshCommand.ExecuteAsync(null);
+    }
+    private sealed class QueueDisplayUpdate(Action<QueueUpdate> update) : IProgress<QueueUpdate>
+    {
+        private long _last; private int _attempt;
+        public void Report(QueueUpdate value)
+        {
+            var now = Stopwatch.GetTimestamp();
+            if (value.Progress is null) { _last = 0; _attempt = 0; }
+            else
+            {
+                if (_last != 0 && _attempt == value.Progress.Attempt && value.Progress.RetryDelay is null && value.Progress.Bytes != value.Progress.Total && Stopwatch.GetElapsedTime(_last, now) < TimeSpan.FromMilliseconds(100)) return;
+                _last = now; _attempt = value.Progress.Attempt;
+            }
+            if (Dispatcher.UIThread.CheckAccess()) update(value); else Dispatcher.UIThread.Post(() => update(value));
+        }
     }
     private void NotifyByteDisplay() { OnPropertyChanged(nameof(Bytes)); OnPropertyChanged(nameof(ExactBytes)); }
     private void DisplayChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -159,12 +265,14 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     {
         var state = result.State switch
         {
+            TransferState.Queued => "Queued; never started. ", TransferState.Running => "Running. ", TransferState.Pending => "Starting. ",
             TransferState.Completed => "Completed. ", TransferState.Cancelled => "Cancelled. ",
             TransferState.OutcomeUnknown => "Outcome Unknown. Reconciliation is required; no replay or deletion was attempted. ",
             TransferState.RequiresReconciliation => "Requires Reconciliation. The operation remains unresolved. ",
             TransferState.Interrupted => "Interrupted. No restart was attempted. ",
             _ => "Failed. "
         };
+        if (result.RetryLimitReached) state = $"Failed — retry limit reached after {result.Attempts} attempts. ";
         var reason = result.Error switch
         {
             TransferError.Conflict => "Destination already exists or a conditional-write conflict occurred. No unconditional replacement was attempted.",
@@ -175,6 +283,11 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
             TransferError.PermissionDenied => "Permission denied.", TransferError.DiskFull => "Insufficient disk space.",
             TransferError.SourceChanged => "The local source changed during transfer.", TransferError.IntegrityMismatch => "Content integrity verification failed.",
             TransferError.Timeout => "Transfer deadline exceeded.", TransferError.NetworkFailure => "Network or TLS operation failed.",
+            TransferError.ConnectionInterrupted => "Connection interrupted.", TransferError.TruncatedResponse => "Remote response ended before the declared length.",
+            TransferError.RateLimited => "Provider throttled the request (HTTP 429).", TransferError.TransientService => "Provider returned a retryable service error (HTTP 500/502/503/504).",
+            TransferError.ObjectMissing => "Object not found; no automatic retry.", TransferError.TlsFailure => "TLS validation or handshake failed; no automatic retry.",
+            TransferError.DestinationChanged => "Destination parent identity changed; retry stopped.",
+            TransferError.CleanupRequired => "Temporary cleanup is uncertain; no further attempt was started.",
             TransferError.CredentialsUnavailable => "Explicit credentials unavailable; review the profile.",
             TransferError.ProfileChanged => "Profile changed; reconnect before transferring.",
             TransferError.RemoteRejected => "Provider rejected the operation or its response could not be verified.",
@@ -182,47 +295,46 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
             TransferError.RecoveryUnavailable => "Safe recovery could not be established. Restart is unavailable; retain the record for inspection. ",
             TransferError.LocalFailure => "Local file operation failed.", TransferError.Busy => "Another transfer is active.", _ => ""
         };
-        return state + reason + result.Verification + (result.CleanupRequired ? " Owned temporary-file cleanup requires attention." : "");
+        return state + reason + result.Verification + (result.CleanupRequired ? " Incomplete multipart or owned temporary-file cleanup requires attention." : "");
     }
     public void Dispose()
     {
+        _queue.CancelActive();
         _display.PropertyChanged -= DisplayChanged;
-        _disposed = true; _operation?.Cancel();
-        _local.PropertyChanged -= Changed; _remote.PropertyChanged -= Changed; _local.SelectedRows.CollectionChanged -= SelectionChanged;
+        _disposed = true; _operation?.Cancel(); _preparation?.Cancel();
+        _local.PropertyChanged -= Changed; _remote.PropertyChanged -= Changed; _local.SelectedRows.CollectionChanged -= SelectionChanged; _remote.SelectedRows.CollectionChanged -= SelectionChanged;
     }
     public async ValueTask DisposeAsync()
     {
         Dispose();
-        try { await Task.WhenAll(UploadCommand.ExecutionTask ?? Task.CompletedTask, DownloadCommand.ExecutionTask ?? Task.CompletedTask, ReconcileCommand.ExecutionTask ?? Task.CompletedTask, RestartCommand.ExecutionTask ?? Task.CompletedTask, DismissCommand.ExecutionTask ?? Task.CompletedTask, ReloadHistoryCommand.ExecutionTask ?? Task.CompletedTask).ConfigureAwait(false); }
+        try { await Task.WhenAll(ResumeMultipartCommand.ExecutionTask ?? Task.CompletedTask, AbortMultipartCommand.ExecutionTask ?? Task.CompletedTask, UploadCommand.ExecutionTask ?? Task.CompletedTask, DownloadCommand.ExecutionTask ?? Task.CompletedTask, ReconcileCommand.ExecutionTask ?? Task.CompletedTask, RestartCommand.ExecutionTask ?? Task.CompletedTask, DismissCommand.ExecutionTask ?? Task.CompletedTask, ReloadHistoryCommand.ExecutionTask ?? Task.CompletedTask, StartQueueCommand.ExecutionTask ?? Task.CompletedTask, RemoveQueuedCommand.ExecutionTask ?? Task.CompletedTask).ConfigureAwait(false); }
         catch { /* Terminal errors are shown by the command; shutdown must not log raw details. */ }
     }
-    private sealed class ThrottledProgress(Action<TransferProgress> update) : IProgress<TransferProgress>
-    {
-        private long _last;
-        private TransferProgress? _latest;
-        public void Flush() { if (Volatile.Read(ref _latest) is { } value) update(value); }
-        public void Report(TransferProgress value)
-        {
-            Volatile.Write(ref _latest, value);
-            var now = Stopwatch.GetTimestamp(); var last = Interlocked.Read(ref _last);
-            if (last != 0 && Stopwatch.GetElapsedTime(last, now) < TimeSpan.FromMilliseconds(100)) return;
-            Interlocked.Exchange(ref _last, now); Dispatcher.UIThread.Post(() => update(value));
-        }
-    }
+
 }
 
 public sealed class TransferHistoryRow(TransferRecord record, DisplayOptions? display = null) : ObservableObject
 {
-    public TransferRecord Record { get; } = record;
+    private TransferRecord _record = record;
+    public TransferRecord Record => _record;
+    private int? _position;
+    public int? Position { get => _position; set { if (SetProperty(ref _position, value)) OnPropertyChanged(nameof(Label)); } }
+    public void UpdateRecord(TransferRecord value) { _record = value; OnPropertyChanged(nameof(Record)); RefreshDisplay(); }
     private readonly DisplayOptions _display = display ?? new();
     public void RefreshDisplay() { OnPropertyChanged(nameof(Label)); OnPropertyChanged(nameof(Details)); }
-    public string Label => $"{Record.Created.LocalDateTime:g} · {(Record.Upload ? "Upload" : "Download")} · {StateLabel} · {BrowserText.Display(Record.Key)} · {ByteSizeFormatter.Format(Record.Bytes, _display.Current.FileSizes)}";
+    public string Label => $"{(Position is { } position ? "#" + position + " · " : "")}{(Record.Upload ? "Upload" : "Download")} · {StateLabel} · {BrowserText.Display(Record.Upload ? Path.GetFileName(Record.LocalPath) : _display.Current.RemoteNames == RemoteNameDisplay.FullKey ? Record.Key : Record.Key[(Record.Key.LastIndexOf('/') + 1)..])} · {ByteSizeFormatter.Format(Record.Bytes, _display.Current.FileSizes)} / {ByteSizeFormatter.Format(Record.Total, _display.Current.FileSizes)}";
     private string StateLabel => Record.State switch { TransferState.OutcomeUnknown => "Outcome Unknown", TransferState.RequiresReconciliation => "Requires Reconciliation", _ => Record.State.ToString() };
     public string Details => $"Operation {Record.Id:N} · {StateLabel} · {ByteSizeFormatter.Format(Record.Bytes, _display.Current.FileSizes)} recorded (exact: {ByteSizeFormatter.Exact(Record.Bytes)}){(Record.Total is { } total ? " / total " + ByteSizeFormatter.Format(total, _display.Current.FileSizes) + " (exact: " + ByteSizeFormatter.Exact(total) + ")" : " / total Unknown")}\n"
         + $"Profile {Record.ProfileId} revision {Record.ProfileRevision} · {BrowserText.Display(Record.Endpoint)}\n"
         + $"{BrowserText.Display(Record.Upload ? Record.LocalPath : Record.Bucket + "/" + Record.Key)} → {BrowserText.Display(Record.Upload ? Record.Bucket + "/" + Record.Key : Path.Combine(Record.LocalPath, Record.Key[(Record.Key.LastIndexOf('/') + 1)..]))}\n"
-        + $"Last recorded phase: {Record.Phase}. {TransferViewModel.Describe(new(Record.State, Record.Error, CleanupRequired: Record.CleanupRequired))}\n"
-        + (Record.CanReconcile ? "Reconcile reads the full object. Missing, changed or inaccessible content remains unresolved. Upload restart is unavailable."
+        + $"Attempt {Record.Attempt}/{Record.MaximumAttempts}{(Record.RetryLimitReached ? " · retry limit reached" : "")} · Last recorded phase: {Record.Phase}. {TransferViewModel.Describe(new(Record.State, Record.Error, CleanupRequired: Record.CleanupRequired))}\n"
+        + (Record.RetryError != TransferError.None ? $"Previous retry cause: {Record.RetryError}.\n" : "")
+        + (Record.Multipart is { } multipart ? $"Multipart: {multipart.Phase} · {multipart.Confirmed.Length}/{multipart.Plan.PartCount} parts acknowledged. "
+            + (multipart.UploadId is null ? "No durable upload ID: initiation ownership is uncertain and provider inspection may be required. BucketBus cannot abort it. " : "")
+            + (Record.CanResumeMultipart ? "Confirm and resume checks the unchanged source and ListParts before sending more data. " : "Resume is unavailable when ownership, a part acknowledgement or completion is uncertain. ")
+            + (Record.CanAbortMultipart ? "Confirm abort removes only the recorded incomplete upload; it never deletes an object.\n" : "Automatic abort is unavailable.\n") : "")
+        + (Record.State == TransferState.Queued ? "Never started. Start / Continue runs this job in FIFO order; it can be removed without deleting data."
+            : Record.CanReconcile ? "Reconcile reads the full object. Missing, changed or inaccessible content remains unresolved. Upload restart is unavailable."
             : Record.CanRestart ? "Restart downloads current remote content from byte zero after checking the destination and recorded temporary identity. A conflicting final file or missing ownership evidence blocks restart."
             : Record.Resolved ? "Resolved history can be dismissed without deleting files or remote objects." : "Automatic recovery and upload restart are unavailable; retain this record for inspection.")
         + (Record.CleanupRequired ? " Temporary cleanup still requires attention." : "");

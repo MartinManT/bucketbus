@@ -2,7 +2,21 @@
 
 A cross-platform, Commander-style S3 file manager, with Ceph RGW as the initial validation target.
 
-Development is at **Phase 1C.1: durable single-file transfers and conservative crash recovery**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. One selected file can be uploaded with a create-only request; one selected object can be downloaded without replacing local data. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+Development is at **Phase 1C.3: durable sequential multipart uploads**. The desktop provides profile/credential management and a read-only S3 browser: explicit connect/disconnect, bucket and prefix navigation, bounded paging and on-demand metadata. The local pane browses directories, files and links. Explicitly selected files or objects can be queued and transferred one at a time, with create-only uploads and protected local downloads. See [Session 4 results](docs/SESSION4_IMPLEMENTATION.md) for executed offline/headless evidence and limits. Initial SDK reads against one identified Ceph deployment now pass; native Linux qualification is partial, and Windows/AWS qualification remains pending. See [Session 5 evidence](docs/SESSION5_IMPLEMENTATION.md). Session 6 adds a Windows x64 self-contained evaluation ZIP cross-published on Fedora; [Windows native validation](docs/WINDOWS_VALIDATION.md) is BLOCKED until the VM is available. See [Session 6 evidence](docs/SESSION6_IMPLEMENTATION.md).
+
+Download retries use the same operation ID, a fresh GET from byte zero and a new
+owned temporary file. The default budget is **three total attempts**, with 1s then
+2s backoff plus 0–250ms jitter. The panel shows attempts, backoff and exhaustion.
+Connection interruptions, premature response endings, timeouts, HTTP 429 and HTTP
+500/502/503/504 may retry after confirmed cleanup and destination checks. Permission,
+authentication, missing-object, TLS, checksum, local-file and ownership failures stop
+processing. Pause after current lets the current item's retry budget finish; Cancel
+active interrupts a backoff. Remaining queued work stays intact after failure.
+
+A later GET can retrieve newer content at a mutable key; cross-attempt version
+identity and partial resume are not promised. Application restart never resumes an
+attempt or retry delay automatically. No PUT is automatically replayed, including
+a lost response, timeout, cancellation or HTTP 5xx.
 
 ## Display settings
 
@@ -110,14 +124,30 @@ Manual smoke test on a graphical desktop:
 5. Cancel a slow listing and close during loading. Check normal laptop sizing,
    scaling, removable drives and native screen-reader behavior manually.
 
-## Single-file transfers (pre-alpha)
+## Sequential transfer queue (pre-alpha)
 
 Navigate the local pane to a directory and the remote pane to a bucket/prefix.
-Select exactly one regular local file and choose **Upload file** (Ctrl+U), or select
-one remote object and choose **Download object** (Ctrl+D). The transfer panel shows
-the captured source/destination, bytes, progress, cancellation and terminal outcome.
-Both panes remain browsable; successful transfers refresh the affected pane only
-if you are still viewing that location. There is one active transfer at a time.
+Select regular local files and choose **Add selected uploads** (Ctrl+U), or select
+objects on the current remote page and choose **Add selected downloads** (Ctrl+D).
+Ctrl/Shift selection works in both panes. Folders, links, S3 prefixes and unselected
+pages are never recursively added. Choose **Start / Continue** to process the
+persisted jobs in FIFO order, with one active transfer.
+
+More files can be added while a transfer runs. **Pause after current** lets that
+transfer finish; **Cancel active** requests cancellation and stops scheduling.
+An error, cancellation, cleanup obligation or uncertain result stops the queue;
+remaining jobs stay queued until explicit continuation. Eligible transient downloads receive at most three whole-file attempts; uploads
+are never automatically retried. Expand **Transfer queue, history and recovery** for individual states,
+position, progress, exact targets, never-started removal and existing recovery
+controls. Paths/full keys stay in details rather than every collapsed row.
+
+Startup loads history and queued work offline and always leaves processing paused.
+Queued means never claimed for execution; started jobs keep the conservative
+Interrupted/Outcome Unknown recovery rules. Uploads capture a full source hash and
+native identity when added, then recheck them before PUT. A changed/missing source
+fails safely. Changed profile revisions/bindings require a fresh explicit selection
+and enqueue; they never redirect an existing job. Duplicate unresolved targets are
+blocked. An enqueue error may leave an explicitly reported subset safely queued.
 
 Uploads concatenate the current **exact prefix** and native filename without
 Unicode normalization. The adapter streams a single PUT with `If-None-Match: *`,
@@ -165,7 +195,22 @@ Downloads verify actual byte length and compatible server checksum evidence. The
 panel states when only length was verified; a locally computed hash is not proof
 of remote equality. ETags are opaque. The buffer is 64 KiB. Transfers have a two-hour
 total deadline; download response-body reads have a 30-second idle deadline. Single
-PUTs are limited to 5 GiB; there is no multipart support or automatic retry.
+PUTs handle files below 128 MiB (including empty files). Files at or above 128 MiB
+use sequential multipart upload, including files larger than 5 GiB. Parts start at
+16 MiB and grow in whole MiB to stay within 10,000 parts; the current application
+ceiling is 5 TiB. Providers may impose smaller limits. There are no automatic
+upload, part, initiation or completion retries. Multipart completion always sends
+`If-None-Match: *`; a rejected condition never triggers unconditional completion.
+The provider-enforcement limitation above applies equally to multipart completion.
+Ceph Squid multipart conditional completion has **not yet been live-qualified** by
+this increment. Multipart ETags are never treated as MD5 hashes.
+
+Multipart progress counts acknowledged parts and remains below 100% until completion
+and full remote SHA-256 verification finish. Queue preparation hashes the source;
+execution reopens and rehashes it, checks native identity around parts, hashes each
+part with bounded buffers, and revalidates full source content before completion.
+These reads preserve integrity and durable reconciliation at an intentional I/O cost;
+no whole-file memory buffer or temporary source copy is created.
 
 Transfers are now recorded in a per-user SQLite journal before destination effects.
 Expand **Transfer history and recovery** to inspect previous results and unresolved
@@ -181,9 +226,20 @@ Resolved history can be dismissed without deleting local or remote data.
 A journal error blocks transfers and preserves evidence. Close other instances and
 preserve the database plus WAL/SHM together for diagnosis; do not delete the journal
 to unblock uncertain writes. Ownership gaps or a possibly published final file
-remain unresolved. There is no batch scheduler, automatic retry or partial resume.
-See [Phase 1C.1 implementation and manual acceptance](docs/PHASE1C1_IMPLEMENTATION.md)
-for durability limits and validation. Windows native checks remain BLOCKED; headless
+remain unresolved. For known incomplete multipart uploads, select history, confirm
+the action and choose **Resume multipart upload** or **Abort incomplete upload**.
+Resume requires the original unchanged profile and source plus exact agreement with
+paginated `ListParts`. An unacknowledged part disables resume: no guess is made about
+its contents or whether its request remains in flight. Abort affects only the recorded
+upload ID, never an object, and checks absence after acknowledgement. An uncertain
+completion allows only full-content reconciliation; it cannot be replayed or aborted.
+An unknown upload ID cannot be cleaned up by BucketBus. Retain the evidence for
+provider investigation; incomplete parts may consume storage. No lifecycle policies
+are changed. Startup remains offline and paused. There is no automatic resume,
+generic scheduler, upload retry or partial download resume.
+See [Phase 1C.2b retry behavior and validation](docs/PHASE1C2B_IMPLEMENTATION.md)
+for download retry limits; see [multipart implementation and smoke tests](docs/PHASE1C3_IMPLEMENTATION.md)
+for the new lifecycle. Windows native checks remain BLOCKED; headless
 tests and cross-publishing do not prove Windows compatibility.
 
 Manual check on Fedora or Windows:
@@ -191,11 +247,11 @@ Manual check on Fedora or Windows:
 1. Build/run using the commands above, connect an explicit profile and navigate to
    an authorized bucket/prefix. Use disposable data on a provider that supports
    conditional creation; no qualification-file installation is needed.
-2. Select a small local file, upload with Ctrl+U and inspect the Completed and
-   SHA-256 verification text. Upload it again: expect Conflict, with original content intact.
+2. Select local files, add them with Ctrl+U, choose Start / Continue and inspect the Completed and
+   SHA-256 verification text. Enqueue an existing name again and Continue: expect Conflict, with original content intact.
 3. Navigate locally to a different empty directory, select the remote object and
-   download with Ctrl+D. Compare `sha256sum` (Fedora) or `Get-FileHash -Algorithm SHA256`
-   (PowerShell). Download again: expect a local conflict without replacement.
+   add downloads with Ctrl+D, then Start / Continue. Compare `sha256sum` (Fedora) or `Get-FileHash -Algorithm SHA256`
+   (PowerShell). Enqueue/download again: expect a local conflict without replacement.
 4. Exercise zero-byte/Unicode files, cancel a larger transfer, and browse each pane
    while it runs. Confirm cancellation/uncertainty is explicit and no partial file
    appears under the final filename. Do not blindly repeat an uncertain upload.

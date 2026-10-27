@@ -18,7 +18,7 @@ public sealed class TransferWorkflowTests
         using var remote = new BrowserFixture(prefix: "exact//é/"); await remote.ConnectAsync();
         using var local = new LocalBrowserViewModel(new LocalFixture()); await local.InitializeAsync();
         var files = new Files(); var factory = new Factory();
-        using var vm = new TransferViewModel(new(remote.Manager, files, factory, new MemoryJournal()), local, remote.Browser);
+        using var vm = TransferTestComposition.Create(remote.Manager, files, factory, new MemoryJournal(), local, remote.Browser);
         Assert.False(vm.UploadCommand.CanExecute(null));
         local.SelectedRows.Add(local.Rows.Single(r => r.Entry.Kind == LocalEntryKind.File && r.Entry.Name == "a-file"));
         Assert.True(vm.UploadCommand.CanExecute(null));
@@ -29,15 +29,17 @@ public sealed class TransferWorkflowTests
         try
         {
             window.KeyPressQwerty(PhysicalKey.U, RawInputModifiers.Control); window.KeyReleaseQwerty(PhysicalKey.U, RawInputModifiers.Control);
+            await vm.UploadCommand.ExecutionTask!;
+            var running = vm.StartQueueCommand.ExecuteAsync(null);
             await BrowserFixture.UntilAsync(() => factory.Key is not null);
-            Assert.True(vm.IsBusy); Assert.False(vm.UploadCommand.CanExecute(null)); Assert.False(vm.DownloadCommand.CanExecute(null));
+            Assert.True(vm.IsBusy); Assert.True(vm.UploadCommand.CanExecute(null)); Assert.False(vm.DownloadCommand.CanExecute(null));
             Assert.Equal("exact//é/a-file", factory.Key);
             await local.NavigateAsync(Path.Combine(local.DirectoryPath, "other"));
             remote.Browser.PrefixInput = "other/"; await remote.Browser.GoCommand.ExecuteAsync(null);
             Assert.True(remote.Browser.IsConnected); Assert.True(vm.IsBusy);
             release.SetResult(new(TransferState.Completed, Verification: "SHA-256 fixture"));
-            await vm.UploadCommand.ExecutionTask!;
-            Assert.Contains("Completed", vm.Status); Assert.Equal("other/", remote.Browser.ActivePrefix); Assert.EndsWith("other", local.DirectoryPath);
+            await running;
+            Assert.Contains("completed", vm.Status, StringComparison.OrdinalIgnoreCase); Assert.Equal("other/", remote.Browser.ActivePrefix); Assert.EndsWith("other", local.DirectoryPath);
             Assert.Equal(100, vm.Percent); Assert.Equal("1 / 1 B", vm.Bytes);
             var notice = window.FindControl<TextBlock>("UploadProviderNotice")!;
             Assert.True(notice.IsVisible);
@@ -54,15 +56,16 @@ public sealed class TransferWorkflowTests
         var files = new Files { SourceLength = 3150938283 }; var factory = new Factory { Progress = new(170283, 3150938283, "Uploading") };
         var release = new TaskCompletionSource<TransferResult>(); CancellationToken observed = default;
         factory.Run = token => { observed = token; return release.Task; };
-        using var vm = new TransferViewModel(new(remote.Manager, files, factory, new MemoryJournal()), local, remote.Browser, display);
-        var pending = vm.UploadCommand.ExecuteAsync(null);
+        using var vm = TransferTestComposition.Create(remote.Manager, files, factory, new MemoryJournal(), local, remote.Browser, display);
+        await vm.UploadCommand.ExecuteAsync(null);
+        var pending = vm.StartQueueCommand.ExecuteAsync(null);
         await BrowserFixture.UntilAsync(() => observed.CanBeCanceled); Dispatcher.UIThread.RunJobs();
         Assert.Equal("166.3 KiB / 2.93 GiB", vm.Bytes); var percent = vm.Percent;
         display.Current = new(FileSizeDisplay.ExactBytes, RemoteNameDisplay.FullKey);
         Assert.Equal("170,283 / 3,150,938,283 B", vm.Bytes); Assert.Equal(percent, vm.Percent);
         Assert.False(observed.IsCancellationRequested); Assert.True(vm.IsBusy); Assert.Equal(1, factory.Created);
         release.SetResult(new(TransferState.Completed)); await pending;
-        Assert.Contains("Completed", vm.Status);
+        Assert.Contains("completed", vm.Status, StringComparison.OrdinalIgnoreCase);
     }
     [AvaloniaFact]
     public async Task Closing_requests_cancellation_and_uncertain_write_remains_explicit()
@@ -72,10 +75,10 @@ public sealed class TransferWorkflowTests
         local.SelectedRows.Add(local.Rows.First(r => r.Entry.Kind == LocalEntryKind.File));
         var factory = new Factory(); CancellationToken observed = default;
         factory.Run = async ct => { observed = ct; try { await Task.Delay(Timeout.InfiniteTimeSpan, ct); } catch (OperationCanceledException) { } return new(TransferState.OutcomeUnknown); };
-        using var vm = new TransferViewModel(new(remote.Manager, new Files(), factory, new MemoryJournal()), local, remote.Browser);
+        using var vm = TransferTestComposition.Create(remote.Manager, new Files(), factory, new MemoryJournal(), local, remote.Browser);
         var window = new MainWindow { DataContext = new MainWindowViewModel(NullLogger<MainWindowViewModel>.Instance, local: local, browser: remote.Browser, transfers: vm) };
         window.Show();
-        var task = vm.UploadCommand.ExecuteAsync(null); await BrowserFixture.UntilAsync(() => observed.CanBeCanceled);
+        await vm.UploadCommand.ExecuteAsync(null); var task = vm.StartQueueCommand.ExecuteAsync(null); await BrowserFixture.UntilAsync(() => observed.CanBeCanceled);
         window.Close(); await task;
         Assert.True(observed.IsCancellationRequested);
         Assert.Contains("Outcome Unknown", TransferViewModel.Describe(new(TransferState.OutcomeUnknown)));
@@ -83,17 +86,19 @@ public sealed class TransferWorkflowTests
     [AvaloniaFact]
     public async Task Download_failure_never_commits_and_success_refreshes_current_local_directory()
     {
-        using var remote = new BrowserFixture(); await remote.ConnectAsync();
-        remote.Browser.SelectedRow = new("prefix/é.txt", BrowserRowKind.Object, 1);
+        using var remote = new BrowserFixture();
+        remote.Factory.CreateSession = (profile, _, _) => new BrowserSession(profile) { Objects = (_, _) => new BrowserListing<StorageEntry>(_ =>
+            Task.FromResult(StorageResult<StoragePage<StorageEntry>>.Success(new([new ObjectEntry("prefix/é.txt", 1, null, null)], true)))) };
+        await remote.ConnectAsync(); remote.Browser.SelectedRow = remote.Browser.Rows[0];
         var localFiles = new LocalFixture(); using var local = new LocalBrowserViewModel(localFiles); await local.InitializeAsync();
         var files = new Files(); var factory = new Factory { Run = _ => Task.FromResult(new TransferResult(TransferState.Failed, TransferError.IntegrityMismatch)) };
-        using var vm = new TransferViewModel(new(remote.Manager, files, factory, new MemoryJournal()), local, remote.Browser);
+        using var vm = TransferTestComposition.Create(remote.Manager, files, factory, new MemoryJournal(), local, remote.Browser);
         Assert.True(vm.DownloadCommand.CanExecute(null));
-        await vm.DownloadCommand.ExecuteAsync(null); Assert.Equal(0, files.Commits); Assert.Equal(1, files.Cleanups);
+        await vm.DownloadCommand.ExecuteAsync(null); await vm.StartQueueCommand.ExecuteAsync(null); Assert.Equal(0, files.Commits); Assert.Equal(1, files.Cleanups);
         Assert.Contains("integrity", vm.Status); Assert.Equal("é.txt", files.Name);
         factory.Run = _ => Task.FromResult(new TransferResult(TransferState.Completed));
         var before = localFiles.Reads;
-        await vm.DownloadCommand.ExecuteAsync(null); Assert.Equal(1, files.Commits); Assert.Equal(before + 1, localFiles.Reads);
+        await vm.DownloadCommand.ExecuteAsync(null); await vm.StartQueueCommand.ExecuteAsync(null); Assert.Equal(1, files.Commits); Assert.Equal(before + 1, localFiles.Reads);
         Assert.Equal(2, files.Cleanups);
     }
     [Fact]
@@ -135,7 +140,7 @@ public sealed class TransferWorkflowTests
     {
         public int Commits, Cleanups; public long SourceLength = 1; public string? Name; public bool Conflict, CleanupRequired;
         public Task<ITransferSource> OpenSourceAsync(string path, CancellationToken token) => Task.FromResult<ITransferSource>(new Source(SourceLength));
-        public Task<ITransferDestination> CreateDestinationAsync(string path, string name, CancellationToken token)
+        public Task<ITransferDestination> CreateDestinationAsync(string path, string name, CancellationToken token, TemporaryReceipt? previous = null)
         { Name = name; return Task.FromResult<ITransferDestination>(new Destination(this)); }
         private sealed class Source(long length) : ITransferSource
         {
@@ -158,6 +163,14 @@ public sealed class TransferWorkflowTests
         private sealed class Session(Factory factory) : IObjectTransferSession
         {
             public Task<TransferResult> UploadAsync(string b, string k, ITransferSource s, IProgress<TransferProgress>? p, CancellationToken ct, Guid? operationId = null) { factory.Key = k; p?.Report(factory.Progress); return factory.Run(ct); }
+            public async Task<TransferResult> UploadMultipartAsync(TransferRecord record, ITransferSource source, Func<MultipartUpload, Task> persist, IProgress<TransferProgress>? progress, CancellationToken token, bool resume = false)
+            {
+                var result = await UploadAsync(record.Bucket, record.Key, source, progress, token, record.Id);
+                var state = record.Multipart!;
+                await persist(state with { UploadId = "fixture", Phase = MultipartPhase.Verified,
+                    Parts = Enumerable.Range(1, state.Plan.PartCount).Select(n => new UploadedPart(n, state.Plan.Length(n, source.Length), "fixture", source.Sha256)).ToArray() });
+                return result;
+            }
             public Task<TransferResult> DownloadAsync(string b, string k, Stream s, IProgress<TransferProgress>? p, CancellationToken ct) { factory.Key = k; return factory.Run(ct); }
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }

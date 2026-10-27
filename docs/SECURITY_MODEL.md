@@ -141,3 +141,50 @@ or dismissal exists for unresolved writes. Download cleanup requires a recorded 
 container/file identity (Linux device/inode/birth time; Windows volume/file ID/creation time),
 no-follow/pinned paths and absence of the final destination. Missing ownership or changed
 identity fails closed; unknown files remain untouched. No startup cleanup occurs.
+
+## Phase 1C.2a queue authority
+
+Each queued job captures immutable profile revision/authority, exact bucket/key and
+local path. Uploads also capture SHA-256, length and a native source fingerprint;
+changed or replaced sources fail before PUT. Execution resolves credentials afresh
+and requires the original profile binding. Unresolved upload protection compares
+endpoint/bucket/key across profiles and signing-region changes. The queue never
+claims Interrupted/Outcome Unknown records. Failed work is not retried by Continue.
+Only Queued rows can be removed; claiming and removal are serialized transactions.
+A fresh process never inherits permission to execute from a previous Start action.
+Legacy migration preserves uncertainty, receipts and operation IDs. There is no new
+credential persistence or live-provider authorization. Existing conditional-write,
+TLS, checksum, native local commit and recovery limits remain binding.
+
+## Phase 1C.2b download retry gate
+
+Automatic retries apply only to failed downloads with allowlisted typed transient
+errors. Checksum, auth/permission, TLS, missing object, unsafe local operations,
+profile changes and ambiguous publication cannot grant retry rights. No exception
+message matching is used. Retry cleanup performs no orphan scan or deletion:
+verified disposal must finish first, then read-only checks require the old temporary
+entry and final name absent and parent identity unchanged. Native creation repeats
+those checks on pinned handles. Missing ownership or uncertain cleanup preserves
+an unresolved record instead of starting another GET. Receipts remain durable during
+backoff; a creation gap cannot reuse an older receipt as proof of the new file's
+ownership. DB failure stops effects, including retry intent/attempt preparation.
+PUT retains conditional creation, source/hash validation, zero SDK retries and
+Outcome Unknown handling. The download policy is never called for uploads.
+
+## Phase 1C.3 multipart boundaries
+
+The transfer transport permits only the selected authority/key and exact multipart
+query parameters for the current call, with SigV4 and one physical send. The
+completion POST must carry `If-None-Match: *`. SDK retries remain zero; redirects
+and unconditional completion are refused. HTTP 200 is insufficient: response
+identity, operation metadata, length and full remote SHA-256 are checked. A lost
+completion response is not replayed or automatically aborted. Provider enforcement
+of conditional completion remains a qualification requirement, not a universal claim.
+
+Upload IDs, part numbers, bounded opaque ETags/checksums and lifecycle obligations
+are recorded in the private transfer journal; credentials and signed URLs are not.
+Only explicit user actions may resume reconciled acknowledged parts or abort an
+owned incomplete ID. A lost upload-ID persistence boundary can leave provider storage
+that BucketBus cannot safely identify or abort. No bucket-wide cleanup is permitted.
+The separate multipart harness requires its own opt-in and independent scope approval;
+previous single-PUT qualification is not authorization for multipart operations.

@@ -39,9 +39,10 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     public bool IsConnected => _session is { IsInvalidated: false };
     public string Location => !IsConnected ? "Not connected" : _bucket is null ? "Buckets" : BrowserText.Display(_bucket + " / " + _prefix);
     public string PageSummary => _index < 0 ? "No page loaded" : $"Page {_firstPage + _index} · {Rows.Count} rows · {_pages.Count}/5 cached pages · Server order; not a whole-bucket total";
+    public System.Collections.ObjectModel.ObservableCollection<BrowserRow> SelectedRows { get; } = [];
     public int RetainedPageCount => _pages.Count;
     public int RetainedRowCount => _pages.Sum(p => p.Entries.Count);
-    public string SelectionIdentity => SelectedRow is null ? "No selection" : SelectedRow.Type + " · Exact key (Unicode escapes): " + SelectedRow.ExactIdentity;
+    public string SelectionIdentity => SelectedRows.Count > 1 ? $"{SelectedRows.Count} explicitly selected rows on this page" : SelectedRow is null ? "No selection" : SelectedRow.Type + " · Exact key (Unicode escapes): " + SelectedRow.ExactIdentity;
     public ConnectionProfile? SelectedProfile
     {
         get => _selectedProfile;
@@ -91,12 +92,15 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
         GoCommand = new AsyncRelayCommand(() => NavigateAsync(string.IsNullOrEmpty(BucketInput) ? null : BucketInput, PrefixInput), () => IsConnected, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         RefreshCommand = new AsyncRelayCommand(() => NavigateAsync(_bucket, _prefix, SelectedRow), () => IsConnected, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         UpCommand = new AsyncRelayCommand(UpAsync, () => IsConnected && _bucket is not null, AsyncRelayCommandOptions.AllowConcurrentExecutions);
-        OpenCommand = new AsyncRelayCommand(OpenAsync, () => IsConnected && SelectedRow is { Kind: not BrowserRowKind.Object }, AsyncRelayCommandOptions.AllowConcurrentExecutions);
+        OpenCommand = new AsyncRelayCommand(OpenAsync, () => IsConnected && SelectedRows.Count <= 1 && SelectedRow is { Kind: not BrowserRowKind.Object }, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         NextCommand = new AsyncRelayCommand(NextAsync, () => IsConnected && !IsBusy && (_index + 1 < _pages.Count || _canFetch));
         PreviousCommand = new RelayCommand(Previous, () => IsConnected && !IsBusy && _index > 0);
-        PropertiesCommand = new AsyncRelayCommand(PropertiesAsync, () => IsConnected && SelectedRow is { Kind: BrowserRowKind.Object }, AsyncRelayCommandOptions.AllowConcurrentExecutions);
+        PropertiesCommand = new AsyncRelayCommand(PropertiesAsync, () => IsConnected && SelectedRows.Count <= 1 && SelectedRow is { Kind: BrowserRowKind.Object }, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         _profiles.ProfileChanged += ProfileChanged;
+        SelectedRows.CollectionChanged += SelectionChanged;
     }
+    private void SelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    { OnPropertyChanged(nameof(SelectionIdentity)); NotifyCommands(); }
     partial void OnStateChanged(BrowserState value) { OnPropertyChanged(nameof(IsBusy)); NotifyCommands(); }
     partial void OnIsMetadataLoadingChanged(bool value) => NotifyCommands();
     private void NotifyCommands()
@@ -147,7 +151,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     private void ClearPages()
     {
         _pages.Clear(); _index = -1; _firstPage = 1; _canFetch = false; _next = null;
-        Rows = Array.Empty<BrowserRow>(); SelectedRow = null; NotifyCommands();
+        SelectedRows.Clear(); Rows = Array.Empty<BrowserRow>(); SelectedRow = null; NotifyCommands();
     }
     private void ClearMetadata()
     {
@@ -254,7 +258,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     }
     private void ShowPage(BrowserRow? restoreSelection = null)
     {
-        Rows = _pages[_index].Entries;
+        SelectedRows.Clear(); Rows = _pages[_index].Entries;
         SelectedRow = restoreSelection is null ? null : Rows.FirstOrDefault(r => r.Key == restoreSelection.Key && r.Kind == restoreSelection.Kind);
         State = Rows.Count == 0 ? BrowserState.Empty : BrowserState.Ready;
         Status = Rows.Count == 0 ? (_pages[_index].IsComplete ? "Empty listing." : "This page is empty; more pages are available.")
@@ -331,6 +335,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     public void Dispose()
     {
         if (_disposed) return;
+        SelectedRows.CollectionChanged -= SelectionChanged;
         Display.PropertyChanged -= DisplayChanged;
         Disconnect(); _disposed = true; ++_profilesGeneration; _profiles.ProfileChanged -= ProfileChanged;
     }

@@ -2,7 +2,7 @@
 
 Status: DRAFT for review · 2026-10-21
 
-The user selected **one desktop process with a small set of internal modules** and approved **ADR-006's MVP recovery contract** on 2026-10-21. The [engineering review and Phase 1A plan](PHASE1A_PLAN.md) recommends proceeding within these boundaries. Specific packages, journal mechanism and limits remain proposed pending implementation-plan approval and validation. Approved Session 1 created the four-project foundation and offline shell; [executed evidence](SESSION1_IMPLEMENTATION.md) is limited to its build and tests. Session 2 adds profiles, credential workflows and OS adapters; [Session 2 evidence](SESSION2_IMPLEMENTATION.md) distinguishes offline results from blocked native qualification. Session 3 implements provider-neutral read-only sessions, explicit SDK clients and bounded protocol normalization; [Session 3 evidence](SESSION3_IMPLEMENTATION.md) records offline validation and remaining provider qualification. Session 4 adds graphical read-only browsing with a five-page cache and independent navigation/metadata generations; see [Session 4 evidence](SESSION4_IMPLEMENTATION.md). Single-file writes and conservative durable recovery are implemented in Phase 1C.1; later queue/retry/multipart mechanisms below remain future scope.
+The user selected **one desktop process with a small set of internal modules** and approved **ADR-006's MVP recovery contract** on 2026-10-21. The [engineering review and Phase 1A plan](PHASE1A_PLAN.md) recommends proceeding within these boundaries. Specific packages, journal mechanism and limits remain proposed pending implementation-plan approval and validation. Approved Session 1 created the four-project foundation and offline shell; [executed evidence](SESSION1_IMPLEMENTATION.md) is limited to its build and tests. Session 2 adds profiles, credential workflows and OS adapters; [Session 2 evidence](SESSION2_IMPLEMENTATION.md) distinguishes offline results from blocked native qualification. Session 3 implements provider-neutral read-only sessions, explicit SDK clients and bounded protocol normalization; [Session 3 evidence](SESSION3_IMPLEMENTATION.md) records offline validation and remaining provider qualification. Session 4 adds graphical read-only browsing with a five-page cache and independent navigation/metadata generations; see [Session 4 evidence](SESSION4_IMPLEMENTATION.md). Single-file writes/recovery (1C.1), sequential queue (1C.2a), bounded download retries (1C.2b) and sequential multipart uploads with explicit recovery (1C.3) are implemented. Historical design proposals below are qualified by the execution dispositions.
 
 Confirmed planning inputs: typical files under 1 GB, LAN and WAN/VPN networks, Squid (19.x) as the primary Ceph validation family, and Fedora/.NET 10 SDK/Docker development. Exact provider builds/configurations require recorded qualification. Windows 11 VM evaluation remains a Phase 1A action. These inputs preserve the separate S3/Admin Ops/IAM/future Dashboard boundaries; administration remains outside MVP.
 
@@ -213,3 +213,46 @@ records reconciliation intent, checks its parent and temporary identities, refus
 existing final file, and cleans only the verified temporary entry. It retains the operation
 ID, then records Pending/Running again before a fresh whole-file GET. An ownership-capture
 gap blocks restart. See [schema, crash windows and limits](PHASE1C1_IMPLEMENTATION.md).
+
+## Phase 1C.2a sequential queue
+
+Core's `TransferQueue` explicitly drains Queued records by durable FIFO sequence
+through the existing `TransferCoordinator`, one transfer at a time. Enqueueing can
+prepare additional source snapshots concurrently with that one transfer; it acquires
+no S3 credentials or client. The same SQLite journal atomically assigns sequence,
+claims Queued to Pending, and removes only never-started jobs. Version 1 migrates
+transactionally to version 2 without resetting history or replaying legacy records.
+The desktop alone marshals queue progress to the UI; exact record identities and
+numeric sizes remain independent of display preferences. No automatic retry or
+startup execution exists. See [executed scope and migration](PHASE1C2A_IMPLEMENTATION.md).
+
+## Phase 1C.2b bounded download attempts
+
+The coordinator owns a fixed three-attempt download loop inside the existing one-job
+queue slot. Each attempt gets a new explicit-credential S3 session and native output
+lease; SDK retries remain zero. Only typed eligible GET failures enter backoff.
+Prior output must be disposed/clean, its receipt retained, and its parent/final/temp
+checked without deletion. Native creation checks that same receipt on its pinned
+parent again before creating the next output, closing the preflight/creation gap.
+The journal remains schema 2: optional payload fields retain attempt, maximum, retry
+cause/time and exhaustion. Running/RetryDelay survives restart as Interrupted and
+never auto-executes. Creation gaps retain old evidence but disable restart actions.
+Upload execution and explicit reconciliation have no new retry path. See
+[retry contract and evidence](PHASE1C2B_IMPLEMENTATION.md).
+
+## Phase 1C.3 multipart execution
+
+Core selects multipart at 128 MiB and records its plan/identity; the existing S3
+session executes one bounded part stream at a time. Awaited persistence callbacks
+form barriers around creation, each part, conditional completion, verification and
+explicit abort. Platform retains native source leases and SQLite WAL/FULL ownership.
+The optional multipart payload uses schema 2; there is no DDL change. Old payloads
+load with null multipart state. Downgrading binaries against new records is unsupported.
+No SDK retries, worker pool, new packages or module changes are introduced.
+
+On restart, pre-completion active uploads become Interrupted; completion intent or
+acknowledged completion remains Outcome Unknown until full read-back reconciliation.
+Explicit resume rehashes the pinned source and compares ListParts to durable part
+receipts before sending remaining parts. Unknown acknowledgements disable resume.
+Abort requires an exact durable ID, no uncertain completion and explicit confirmation;
+it verifies absence and never issues DeleteObject. See [implementation](PHASE1C3_IMPLEMENTATION.md).

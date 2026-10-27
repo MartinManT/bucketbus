@@ -26,7 +26,9 @@ public static class CompositionRoot
         services.AddSingleton<ITransferFiles, TransferFiles>();
         services.AddSingleton<IObjectTransferFactory, S3TransferFactory>();
         services.AddSingleton<ITransferJournal>(_ => new SqliteTransferJournal(SqliteTransferJournal.DefaultDirectory));
+        services.AddSingleton<DownloadRetryPolicy>();
         services.AddSingleton<TransferCoordinator>();
+        services.AddSingleton<TransferQueue>();
         services.AddSingleton<TransferViewModel>();
         services.AddSingleton<ILocalDirectoryBrowser, LocalDirectoryBrowser>();
         services.AddSingleton<LocalBrowserViewModel>();

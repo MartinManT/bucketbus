@@ -40,7 +40,7 @@
         <TextBlock Grid.Column="2" Text="Modified" /><TextBlock Grid.Column="3" Text="Type" />
       </Grid>
     </StackPanel>
-    <ListBox Grid.Row="5" x:Name="ObjectList" Focusable="True" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+    <ListBox Grid.Row="5" x:Name="ObjectList" Focusable="True" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" SelectedItems="{Binding SelectedRows, Mode=OneWay}" SelectionMode="Multiple"
              MinHeight="80" AutomationProperties.Name="Remote buckets, prefixes and objects"
              ScrollViewer.HorizontalScrollBarVisibility="Auto">
       <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListBox.Styles>

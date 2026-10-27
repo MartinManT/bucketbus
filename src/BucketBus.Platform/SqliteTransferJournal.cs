@@ -22,6 +22,7 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
         if (old is null ? record.Revision != 0 || record.State != TransferState.Pending : !TransferRecord.Allows(old, record))
             throw new JournalException();
         Write(record, transaction, old is null);
+        BeforeSaveCommit?.Invoke(record);
         transaction.Commit(); return true;
     }, token);
     public Task DismissAsync(Guid id, CancellationToken token) => Work(() =>
@@ -33,6 +34,33 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
         command.Parameters.AddWithValue("$id", id.ToString("N")); command.ExecuteNonQuery();
         transaction.Commit(); return true;
     }, token);
+    public Task<TransferRecord> EnqueueAsync(TransferRecord record, CancellationToken token) => Work(() =>
+    {
+        if (record.Revision != 0 || record.State != TransferState.Queued || record.QueueOrder is not null) throw new JournalException();
+        using var tx = _connection!.BeginTransaction();
+        using var sequence = Command("SELECT COALESCE(MAX(sequence),0)+1 FROM transfers", tx);
+        record = record with { QueueOrder = Convert.ToInt64(sequence.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) };
+        record.Validate(); Write(record, tx, true); tx.Commit(); return record;
+    }, token);
+    public Task<bool> RemoveQueuedAsync(Guid id, CancellationToken token) => Work(() =>
+    {
+        using var tx = _connection!.BeginTransaction();
+        var record = Find(id, tx);
+        if (record?.State != TransferState.Queued) return false;
+        using var command = Command("DELETE FROM transfers WHERE id=$id AND state=$state", tx);
+        command.Parameters.AddWithValue("$id", id.ToString("N")); command.Parameters.AddWithValue("$state", (int)TransferState.Queued);
+        if (command.ExecuteNonQuery() != 1) throw new JournalException();
+        tx.Commit(); return true;
+    }, token);
+    public Task<TransferRecord?> ClaimQueuedAsync(Guid id, CancellationToken token) => Work<TransferRecord?>(() =>
+    {
+        using var tx = _connection!.BeginTransaction();
+        var record = Find(id, tx);
+        if (record?.State != TransferState.Queued) return null;
+        record = record.Next(TransferState.Pending); Write(record, tx, false); tx.Commit(); return record;
+    }, token);
+    internal Action<TransferRecord>? BeforeSaveCommit { get; set; }
+    internal Action? BeforeMigrationCommit { get; set; }
     private async Task<T> Work<T>(Func<T> action, CancellationToken token)
     {
         await _gate.WaitAsync(token).ConfigureAwait(false);
@@ -77,7 +105,8 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
         _connection = new SqliteConnection(new SqliteConnectionStringBuilder
         { DataSource = database, Mode = SqliteOpenMode.ReadWrite, Pooling = false, DefaultTimeout = 2 }.ToString());
         _connection.Open();
-        if (existed && (ScalarLong("PRAGMA user_version") != 1 || ScalarLong("PRAGMA application_id") != ApplicationId)) throw new JournalException();
+        var version = ScalarLong("PRAGMA user_version");
+        if (existed && (version is not (1 or 2) || ScalarLong("PRAGMA application_id") != ApplicationId)) throw new JournalException();
         if (!Equals(Scalar("PRAGMA quick_check"), "ok")) throw new JournalException();
         if (!Equals(Scalar("PRAGMA journal_mode=WAL"), "wal")) throw new JournalException();
         Execute("PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF;");
@@ -85,8 +114,22 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
         if (!existed)
         {
             using var tx = _connection.BeginTransaction();
-            using var create = Command($"CREATE TABLE transfers (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, state INTEGER NOT NULL, payload TEXT NOT NULL); PRAGMA user_version=1; PRAGMA application_id={ApplicationId};", tx);
+            using var create = Command($"CREATE TABLE transfers (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, state INTEGER NOT NULL, payload TEXT NOT NULL, sequence INTEGER UNIQUE); PRAGMA user_version=2; PRAGMA application_id={ApplicationId};", tx);
             create.ExecuteNonQuery(); tx.Commit();
+        }
+        else if (version == 1)
+        {
+            // Validate legacy contents before any DDL; preserve every ID, revision and payload.
+            using (var legacy = Command("SELECT id,revision,state,payload FROM transfers"))
+            using (var reader = legacy.ExecuteReader())
+                while (reader.Read())
+                {
+                    var row = Decode(reader);
+                    if (row.QueueOrder is not null || row.State == TransferState.Queued) throw new JournalException();
+                }
+            using var tx = _connection.BeginTransaction();
+            using var migrate = Command("ALTER TABLE transfers ADD COLUMN sequence INTEGER; CREATE UNIQUE INDEX queue_sequence ON transfers(sequence); PRAGMA user_version=2;", tx);
+            migrate.ExecuteNonQuery(); BeforeMigrationCommit?.Invoke(); tx.Commit();
         }
         // Recover all active records atomically. No credentials, filesystem cleanup or S3 access here.
         var rows = ReadAll();
@@ -96,6 +139,8 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
             TransferState? state = row.State switch
             {
                 TransferState.Pending => TransferState.Interrupted,
+                TransferState.Running when row.Multipart is { Phase: MultipartPhase.Aborted } => TransferState.Cancelled,
+                TransferState.Running when row.Multipart is { CompletionUncertain: false } => TransferState.Interrupted,
                 TransferState.Running when row.Upload => TransferState.OutcomeUnknown,
                 TransferState.Running when row.Phase == TransferPhase.Committing => TransferState.RequiresReconciliation,
                 TransferState.Running => TransferState.Interrupted,
@@ -118,14 +163,14 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
     }
     private List<TransferRecord> ReadAll()
     {
-        using var command = Command("SELECT id, revision, state, payload FROM transfers ORDER BY rowid DESC");
+        using var command = Command("SELECT id, revision, state, payload, sequence FROM transfers ORDER BY rowid DESC");
         using var reader = command.ExecuteReader(); var rows = new List<TransferRecord>();
         while (reader.Read()) rows.Add(Decode(reader));
         return rows;
     }
     private TransferRecord? Find(Guid id, SqliteTransaction transaction)
     {
-        using var command = Command("SELECT id, revision, state, payload FROM transfers WHERE id=$id", transaction);
+        using var command = Command("SELECT id, revision, state, payload, sequence FROM transfers WHERE id=$id", transaction);
         command.Parameters.AddWithValue("$id", id.ToString("N")); using var reader = command.ExecuteReader();
         return reader.Read() ? Decode(reader) : null;
     }
@@ -133,16 +178,18 @@ public sealed class SqliteTransferJournal(string directory) : ITransferJournal, 
     {
         var record = JsonSerializer.Deserialize<TransferRecord>(reader.GetString(3)) ?? throw new JournalException();
         record.Validate();
+        if (reader.FieldCount > 4 && (reader.IsDBNull(4) ? (long?)null : reader.GetInt64(4)) != record.QueueOrder) throw new JournalException();
         if (record.Id.ToString("N") != reader.GetString(0) || record.Revision != reader.GetInt64(1) || (int)record.State != reader.GetInt32(2)) throw new JournalException();
         return record;
     }
     private void Write(TransferRecord record, SqliteTransaction transaction, bool insert)
     {
-        using var command = Command(insert ? "INSERT INTO transfers VALUES ($id,$revision,$state,$payload)"
+        using var command = Command(insert ? "INSERT INTO transfers (id,revision,state,payload,sequence) VALUES ($id,$revision,$state,$payload,$sequence)"
             : "UPDATE transfers SET revision=$revision,state=$state,payload=$payload WHERE id=$id AND revision=$previous", transaction);
         command.Parameters.AddWithValue("$id", record.Id.ToString("N"));
         command.Parameters.AddWithValue("$revision", record.Revision); command.Parameters.AddWithValue("$state", (int)record.State);
         command.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(record));
+        if (insert) command.Parameters.AddWithValue("$sequence", (object?)record.QueueOrder ?? DBNull.Value);
         if (!insert) command.Parameters.AddWithValue("$previous", record.Revision - 1);
         if (command.ExecuteNonQuery() != 1) throw new JournalException();
     }

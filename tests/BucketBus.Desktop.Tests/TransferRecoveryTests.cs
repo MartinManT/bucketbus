@@ -94,7 +94,7 @@ public sealed class TransferRecoveryTests
         var journal = new MemoryJournal(); var factory = new FakeFactory(); var profile = profiles.Profiles.Snapshot.Profiles[0];
         var upload = Saved(profile, fixture.Source, true); journal.Records[upload.Id] = upload;
         using var local = new LocalBrowserViewModel(new LocalFixture());
-        using var vm = new TransferViewModel(new(profiles.Manager, new TransferFiles(), factory, journal), local, profiles.Browser);
+        using var vm = TransferTestComposition.Create(profiles.Manager, new TransferFiles(), factory, journal, local, profiles.Browser);
         await vm.InitializeAsync(); vm.SelectedHistory = Assert.Single(vm.History);
         Assert.True(vm.ReconcileCommand.CanExecute(null)); Assert.False(vm.RestartCommand.CanExecute(null)); Assert.False(vm.DismissCommand.CanExecute(null));
         Assert.Contains("Upload restart is unavailable", vm.RecoveryDetails); Assert.Equal(0, factory.Created);

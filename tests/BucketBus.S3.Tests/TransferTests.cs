@@ -134,7 +134,7 @@ public sealed class TransferTests
         var transport = new ScriptTransport((_, _) => { var r = Object(Data, checksum: false); r.Content.Headers.ContentLength = Data.Length + 1; return Task.FromResult(r); });
         await using var session = Session(transport);
         var result = await session.DownloadAsync("test-bucket", "key", Stream.Null, null, TestContext.Current.CancellationToken);
-        Assert.Equal(TransferState.Failed, result.State); Assert.Equal(TransferError.IntegrityMismatch, result.Error);
+        Assert.Equal(TransferState.Failed, result.State); Assert.Equal(TransferError.TruncatedResponse, result.Error);
     }
     [Fact]
     public async Task Source_mutation_after_put_cannot_be_reported_as_completed()
@@ -261,6 +261,32 @@ public sealed class TransferTests
         });
         await using var session = Session(transport);
         Assert.Equal(TransferState.Completed, (await session.UploadAsync("test-bucket", "key", source, null, TestContext.Current.CancellationToken, id)).State);
+    }
+    [Theory]
+    [InlineData(429, TransferError.RateLimited)] [InlineData(500, TransferError.TransientService)]
+    [InlineData(502, TransferError.TransientService)] [InlineData(503, TransferError.TransientService)] [InlineData(504, TransferError.TransientService)]
+    [InlineData(401, TransferError.AuthenticationFailed)] [InlineData(403, TransferError.PermissionDenied)] [InlineData(404, TransferError.ObjectMissing)]
+    [InlineData(400, TransferError.RemoteRejected)] [InlineData(501, TransferError.RemoteRejected)] [InlineData(505, TransferError.RemoteRejected)]
+    public async Task Download_status_classification_is_typed_and_each_session_sends_once(int status, TransferError expected)
+    {
+        var transport = new ScriptTransport((_, _) => Task.FromResult(SdkFixture.Xml(SdkFixture.Error("SyntheticCode"), (HttpStatusCode)status)));
+        await using var session = Session(transport);
+        var result = await session.DownloadAsync("test-bucket", "key", Stream.Null, null, TestContext.Current.CancellationToken);
+        Assert.Equal(expected, result.Error); Assert.Equal(1, transport.Attempts);
+    }
+    [Theory]
+    [InlineData(HttpRequestError.ConnectionError, TransferError.ConnectionInterrupted)]
+    [InlineData(HttpRequestError.NameResolutionError, TransferError.ConnectionInterrupted)]
+    [InlineData(HttpRequestError.ResponseEnded, TransferError.TruncatedResponse)]
+    [InlineData(HttpRequestError.SecureConnectionError, TransferError.TlsFailure)]
+    [InlineData(HttpRequestError.InvalidResponse, TransferError.NetworkFailure)]
+    [InlineData(HttpRequestError.Unknown, TransferError.NetworkFailure)]
+    public async Task Download_transport_classification_ignores_exception_message(HttpRequestError kind, TransferError expected)
+    {
+        var transport = new ScriptTransport((_, _) => throw new HttpRequestException(kind, "misleading timeout HTTP 503 synthetic text"));
+        await using var session = Session(transport);
+        var result = await session.DownloadAsync("test-bucket", "key", Stream.Null, null, TestContext.Current.CancellationToken);
+        Assert.Equal(expected, result.Error); Assert.Equal(1, transport.Attempts);
     }
     private sealed class GeneratedInput(long length, bool disconnect) : Stream
     {
