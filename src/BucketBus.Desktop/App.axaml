@@ -28,6 +28,10 @@
       <Setter Property="MinHeight" Value="28" /><Setter Property="Padding" Value="8,2" />
     </Style>
     <Style Selector="Window.desktop TabItem"><Setter Property="FontSize" Value="14" /><Setter Property="MinHeight" Value="30" /><Setter Property="Padding" Value="8,3" /></Style>
+    <Style Selector="ListBox#LocalList, ListBox#ObjectList">
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible" />
+      <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
     <Style Selector="Border.pane">
       <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
       <Setter Property="BorderThickness" Value="1" />

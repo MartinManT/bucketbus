@@ -9,7 +9,12 @@ internal static class Program
     {
         try
         {
-            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            var builder = BuildAvaloniaApp();
+            // Opt-in diagnostic for X11 drivers whose emulated scroll input is lost
+            // in the multitouch path. Keep native defaults for normal startup.
+            if (OperatingSystem.IsLinux() && args.Contains("--x11-no-multitouch", StringComparer.Ordinal))
+                builder = builder.With(new X11PlatformOptions { EnableMultiTouch = false });
+            return builder.StartWithClassicDesktopLifetime(args);
         }
         catch (Exception)
         {

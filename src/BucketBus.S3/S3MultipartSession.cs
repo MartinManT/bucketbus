@@ -140,6 +140,7 @@ internal sealed partial class S3TransferSession
         if (Interlocked.Exchange(ref _used, 1) != 0) return new(TransferState.Interrupted, TransferError.Busy, CleanupRequired: true);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(deadline);
         var verifyingAbsence = false;
+        var verifyingListing = false;
         try
         {
             record.Validate();
@@ -164,6 +165,15 @@ internal sealed partial class S3TransferSession
                 return new(TransferState.Interrupted, TransferError.CleanupRequired, CleanupRequired: true);
             }
             catch (AmazonS3Exception e) when (e.StatusCode == HttpStatusCode.NotFound && e.ErrorCode == "NoSuchUpload") { }
+            catch (AmazonS3Exception e) when (e.StatusCode == HttpStatusCode.NotFound && e.ErrorCode == "NoSuchKey")
+            {
+                // Squid can report missing multipart metadata as NoSuchKey. It is not
+                // absence proof by itself: check a complete, exact-prefix upload listing.
+                verifyingListing = true;
+                if (!await MultipartUploadAbsentAsync(record, timeout.Token).ConfigureAwait(false))
+                    return new(TransferState.Interrupted, TransferError.CleanupRequired,
+                        Verification: " Recorded upload is still listed; cleanup remains unresolved.", CleanupRequired: true);
+            }
             await persist(state with { Phase = MultipartPhase.Aborted }).ConfigureAwait(false);
             return new(TransferState.Cancelled, Verification: "Owned multipart upload aborted and absence confirmed. No object deletion requested.");
         }
@@ -181,9 +191,49 @@ internal sealed partial class S3TransferSession
                     "ExpiredToken" => "ExpiredToken", _ => "unclassified provider error"
                 };
                 detail = $"Provider returned HTTP {(int)service.StatusCode} ({code}).";
+                if (verifyingListing && service.StatusCode == HttpStatusCode.Forbidden)
+                    detail += " Multipart cleanup verification requires s3:ListBucketMultipartUploads permission.";
             }
-            var diagnostic = detail is null ? "" : " " + (verifyingAbsence ? "Cleanup verification: " : "Abort request: ") + detail;
+            var diagnostic = detail is null ? "" : " " + (verifyingListing ? "Cleanup verification (ListMultipartUploads): " : verifyingAbsence ? "Cleanup verification: " : "Abort request: ") + detail;
             return new(TransferState.Interrupted, Error(e, token, timeout.Token), Verification: diagnostic, CleanupRequired: true);
         }
     }
+    private async Task<bool> MultipartUploadAbsentAsync(TransferRecord record, CancellationToken token)
+    {
+        using var verification = CancellationTokenSource.CreateLinkedTokenSource(token);
+        verification.CancelAfter(TimeSpan.FromSeconds(30));
+        string? keyMarker = null, uploadMarker = null;
+        var seen = new HashSet<(string, string)>();
+        var markers = new HashSet<(string, string)>();
+        for (var page = 0; page < 16; page++)
+        {
+            transport.BeginMultipartListing(record.Bucket, record.Key, keyMarker, uploadMarker);
+            var response = await client.ListMultipartUploadsAsync(new ListMultipartUploadsRequest
+            {
+                BucketName = record.Bucket, Prefix = record.Key, MaxUploads = 1000,
+                KeyMarker = keyMarker, UploadIdMarker = uploadMarker
+            }, verification.Token).ConfigureAwait(false);
+            var uploads = response.MultipartUploads ?? [];
+            if (response.HttpStatusCode != HttpStatusCode.OK || response.BucketName != record.Bucket
+                || response.Prefix != record.Key || response.IsTruncated is null || response.EncodingType is not null
+                || !string.IsNullOrEmpty(response.Delimiter) || response.CommonPrefixes?.Count > 0
+                || (response.KeyMarker ?? "") != (keyMarker ?? "") || (response.UploadIdMarker ?? "") != (uploadMarker ?? "")
+                || uploads.Count > 1000) throw new TransferException(TransferError.RecoveryUnavailable);
+            foreach (var upload in uploads)
+            {
+                if (upload.Key is null || !upload.Key.StartsWith(record.Key, StringComparison.Ordinal)
+                    || new System.Text.UTF8Encoding(false, true).GetByteCount(upload.Key) > 1024
+                    || string.IsNullOrEmpty(upload.UploadId) || upload.UploadId.Length > 4096 || upload.UploadId.Any(char.IsControl)
+                    || !seen.Add((upload.Key, upload.UploadId))) throw new TransferException(TransferError.RecoveryUnavailable);
+                if (upload.Key == record.Key && upload.UploadId == record.Multipart!.UploadId) return false;
+            }
+            if (response.IsTruncated == false) return true;
+            if (uploads.Count == 0 || response.NextKeyMarker != uploads[^1].Key || response.NextUploadIdMarker != uploads[^1].UploadId
+                || !markers.Add((response.NextKeyMarker, response.NextUploadIdMarker)))
+                throw new TransferException(TransferError.RecoveryUnavailable);
+            keyMarker = response.NextKeyMarker; uploadMarker = response.NextUploadIdMarker;
+        }
+        throw new TransferException(TransferError.RecoveryUnavailable);
+    }
+
 }

@@ -73,7 +73,7 @@ public sealed class MultipartInteractionTests
     [AvaloniaTheory]
     [InlineData("redirect", "redirect")]
     [InlineData("missing-bucket", "NoSuchBucket")]
-    [InlineData("verification-missing-key", "NoSuchKey")]
+    [InlineData("verification-missing-key", "AccessDenied")]
     [InlineData("unknown-code", "unclassified provider error")]
     public async Task Sdk_abort_rejection_explains_stage_without_resolving_or_replaying(string scenario, string diagnostic)
     {
@@ -93,8 +93,8 @@ public sealed class MultipartInteractionTests
             await vm.AbortMultipartCommand.ExecutionTask!.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken); Layout(window);
             var record = Assert.Single(vm.History).Record;
             Assert.False(record.Resolved); Assert.True(record.CleanupRequired); Assert.True(record.CanAbortMultipart);
-            Assert.Equal(TransferError.RemoteRejected, record.Error);
-            Assert.Equal(scenario == "verification-missing-key" ? 2 : 1, transport.Methods.Count);
+            Assert.Equal(scenario == "verification-missing-key" ? TransferError.PermissionDenied : TransferError.RemoteRejected, record.Error);
+            Assert.Equal(scenario == "verification-missing-key" ? 3 : 1, transport.Methods.Count);
             Assert.Equal(HttpMethod.Delete, transport.Methods[0]);
             Assert.Contains(diagnostic, vm.Status, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(diagnostic, window.FindControl<TextBlock>("RecoveryStatus")!.Text, StringComparison.OrdinalIgnoreCase);
@@ -107,6 +107,7 @@ public sealed class MultipartInteractionTests
     [AvaloniaTheory]
     [InlineData("absent")]
     [InlineData("already-absent")]
+    [InlineData("ceph-empty")]
     public async Task Sdk_confirmed_absence_resolves_and_allows_explicit_fresh_enqueue(string scenario)
     {
         await using var f = new MultipartWorkflowTests.Fixture(); f.Remote.Stop = "after-ack";
@@ -120,10 +121,10 @@ public sealed class MultipartInteractionTests
         Assert.Equal(TransferState.Cancelled, Assert.Single(vm.History).Record.State);
         Assert.Equal(MultipartPhase.Aborted, Assert.Single(vm.History).Record.Multipart!.Phase);
         Assert.True(Assert.Single(vm.History).Record.Resolved); Assert.Contains("cleanup confirmed", vm.RecoveryFeedback);
-        Assert.Equal(new[] { HttpMethod.Delete, HttpMethod.Get }, transport.Methods);
+        Assert.Equal(scenario == "ceph-empty" ? new[] { HttpMethod.Delete, HttpMethod.Get, HttpMethod.Get } : new[] { HttpMethod.Delete, HttpMethod.Get }, transport.Methods);
         await f.Add(); await vm.InitializeAsync();
         Assert.Single(vm.History, r => r.Record.State == TransferState.Queued);
-        Assert.Equal(2, transport.Methods.Count); // Enqueue never starts another upload.
+        Assert.Equal(scenario == "ceph-empty" ? 3 : 2, transport.Methods.Count); // Enqueue never starts another upload.
     }
     [Theory]
     [InlineData("authority", "authority")]
@@ -173,7 +174,13 @@ public sealed class MultipartInteractionTests
         {
             Methods.Add(request.Method);
             if (scenario == "unused") return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent) { Content = new ByteArrayContent([]) });
-            Assert.Contains("uploadId=owned-id", request.RequestUri!.Query);
+            if (request.RequestUri!.Query.Contains("uploads", StringComparison.Ordinal) && scenario == "ceph-empty")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent("<ListMultipartUploadsResult><Bucket>test-bucket</Bucket><Prefix>key</Prefix><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>", System.Text.Encoding.UTF8, "application/xml") });
+            if (request.RequestUri.Query.Contains("uploads", StringComparison.Ordinal))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
+                { Content = new StringContent("<Error><Code>AccessDenied</Code></Error>", System.Text.Encoding.UTF8, "application/xml") });
+            Assert.Contains("uploadId=owned-id", request.RequestUri.Query);
             if (scenario == "redirect") return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect) { Content = new ByteArrayContent([]) });
             if (scenario is "missing-bucket" or "unknown-code" or "already-absent" || request.Method == HttpMethod.Get)
             {

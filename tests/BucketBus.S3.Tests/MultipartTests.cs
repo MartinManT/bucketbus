@@ -119,6 +119,50 @@ public sealed class MultipartTests
         Assert.Equal(evidence is not ("absent" or "already-absent"), result.CleanupRequired); Assert.Equal("abort", f.Calls[0]);
         Assert.DoesNotContain("complete", f.Calls);
     }
+    [Theory]
+    [InlineData("empty", true)] [InlineData("other-upload", true)] [InlineData("paginated", true)]
+    [InlineData("retained", false)] [InlineData("retained-page2", false)] [InlineData("denied", false)]
+    [InlineData("missing-bucket", false)] [InlineData("malformed", false)] [InlineData("repeated-marker", false)]
+    [InlineData("wrong-prefix", false)] [InlineData("wrong-bucket", false)] [InlineData("grouped", false)]
+    [InlineData("encoded", false)] [InlineData("missing-upload-id", false)] [InlineData("outside-prefix", false)]
+    [InlineData("bad-marker", false)] [InlineData("page-limit", false)] [InlineData("different-key-same-id", true)]
+    public async Task Ceph_missing_key_after_abort_requires_complete_scoped_upload_listing(string evidence, bool resolved)
+    {
+        using var f = new Fixture(); await f.SeedOnePart(); f.AbortEvidence = "ceph"; f.CleanupEvidence = evidence;
+        await using var session = f.Session(); var result = await session.AbortMultipartAsync(f.Record, f.Save, Token);
+        Assert.Equal(resolved ? TransferState.Cancelled : TransferState.Interrupted, result.State);
+        Assert.Equal(!resolved, result.CleanupRequired);
+        Assert.Equal(resolved ? MultipartPhase.Aborted : MultipartPhase.Aborting, f.Record.Multipart!.Phase);
+        Assert.Equal(new[] { "abort", "list" }, f.Calls.Take(2));
+        Assert.Contains("cleanup-list", f.Calls);
+        Assert.All(f.Calls.Skip(2), call => Assert.Equal("cleanup-list", call));
+        Assert.Single(f.Calls, call => call == "abort"); Assert.DoesNotContain("complete", f.Calls);
+        Assert.Null(f.FixtureError);
+        if (evidence == "page-limit") Assert.Equal(16, f.Calls.Count(c => c == "cleanup-list"));
+    }
+    [Fact]
+    public async Task Ceph_cleanup_listing_preserves_unusual_exact_keys()
+    {
+        using var f = new Fixture("/prefix//é é +%&漢字.bin"); await f.SeedOnePart(); f.AbortEvidence = "ceph"; f.CleanupEvidence = "empty";
+        await using var session = f.Session(); var result = await session.AbortMultipartAsync(f.Record, f.Save, Token);
+        Assert.Equal(TransferState.Cancelled, result.State); Assert.False(result.CleanupRequired); Assert.Null(f.FixtureError);
+    }
+    [Theory]
+    [InlineData("bucket")] [InlineData("prefix")] [InlineData("query")] [InlineData("method")]
+    public async Task Multipart_cleanup_listing_guard_rejects_scope_changes_before_transport(string fault)
+    {
+        var calls = 0; var profile = TransferTests.Profile();
+        using var transport = new TransferTransport(profile, new ScriptTransport((_, _) =>
+        { calls++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([]) }); }));
+        transport.BeginMultipartListing("test-bucket", "key", null, null);
+        using var client = new HttpClient(transport);
+        var uri = profile.Settings.Endpoint + (fault == "bucket" ? "/other-bucket" : "/test-bucket")
+            + "?uploads&max-uploads=1000&prefix=" + (fault == "prefix" ? "other-key" : "key") + (fault == "query" ? "&delimiter=/" : "");
+        using var request = new HttpRequestMessage(fault == "method" ? HttpMethod.Delete : HttpMethod.Get, uri);
+        request.Headers.TryAddWithoutValidation("Authorization", "AWS4-HMAC-SHA256 Credential=SYNTHETIC/20261027/us-east-1/s3/aws4_request");
+        var error = await Assert.ThrowsAsync<TransferException>(() => client.SendAsync(request, Token));
+        Assert.Equal(TransferError.RemoteRejected, error.Error); Assert.Equal(0, calls);
+    }
     [Fact]
     public async Task Unknown_completion_cannot_be_aborted_and_can_only_be_read_back()
     {
@@ -188,7 +232,7 @@ public sealed class MultipartTests
         public Func<string, CancellationToken, Task<HttpResponseMessage?>>? Fault;
         public Func<MultipartUpload, bool>? PersistFailure;
         public Exception? FixtureError;
-        public string? BadReadback, AbortEvidence;
+        public string? BadReadback, AbortEvidence, CleanupEvidence;
         public string ListEvidence = "agree";
         public Fixture(string key = "key")
         {
@@ -213,13 +257,50 @@ public sealed class MultipartTests
         }
         private async Task<HttpResponseMessage> Send(HttpRequestMessage request, CancellationToken token)
         {
-            Assert.Equal("/test-bucket/" + Record.Key, Uri.UnescapeDataString(request.RequestUri!.AbsolutePath));
-            var query = request.RequestUri.Query;
-            var stage = request.Method == HttpMethod.Delete ? "abort" : query.Contains("partNumber=") ? "part" + query.Split("partNumber=")[1].Split('&')[0]
+            var query = request.RequestUri!.Query;
+            var cleanupList = request.Method == HttpMethod.Get && query.Contains("uploads", StringComparison.Ordinal);
+            if (cleanupList) Assert.Equal("/test-bucket", Uri.UnescapeDataString(request.RequestUri.AbsolutePath).TrimEnd('/'));
+            else Assert.Equal("/test-bucket/" + Record.Key, Uri.UnescapeDataString(request.RequestUri.AbsolutePath));
+            var stage = cleanupList ? "cleanup-list" : request.Method == HttpMethod.Delete ? "abort" : query.Contains("partNumber=") ? "part" + query.Split("partNumber=")[1].Split('&')[0]
                 : query.Contains("uploads") ? "create" : query.Contains("uploadId") ? request.Method == HttpMethod.Post ? "complete" : "list" : "verify";
             Calls.Add(stage);
-            if (stage is not ("create" or "verify")) Assert.Contains("uploadId=owned+/id=", Uri.UnescapeDataString(query));
+            if (stage is not ("create" or "verify" or "cleanup-list")) Assert.Contains("uploadId=owned+/id=", Uri.UnescapeDataString(query));
             if (Fault is not null && await Fault(stage, token) is { } fault) return fault;
+            if (cleanupList)
+            {
+                Assert.Contains("prefix=" + Record.Key, Uri.UnescapeDataString(query));
+                Assert.Contains("max-uploads=1000", query);
+                if (CleanupEvidence == "denied") return SdkFixture.Xml(SdkFixture.Error("AccessDenied"), HttpStatusCode.Forbidden);
+                if (CleanupEvidence == "missing-bucket") return SdkFixture.Xml(SdkFixture.Error("NoSuchBucket"), HttpStatusCode.NotFound);
+                var parameters = query.TrimStart('?').Split('&').Select(s => s.Split('=', 2))
+                    .ToDictionary(p => Uri.UnescapeDataString(p[0]), p => p.Length == 2 ? Uri.UnescapeDataString(p[1]) : "");
+                var second = parameters.ContainsKey("key-marker");
+                var page = Calls.Count(c => c == "cleanup-list");
+                var truncated = CleanupEvidence is "paginated" or "retained-page2" or "repeated-marker" or "bad-marker" && !second
+                    || CleanupEvidence is "repeated-marker" or "page-limit";
+                var retained = CleanupEvidence == "retained" || CleanupEvidence == "retained-page2" && second;
+                var otherId = CleanupEvidence == "page-limit" ? "other-id-" + page : "other-id";
+                string Upload(string key, string? id) => "<Upload><Key>" + SecurityElement.Escape(key) + "</Key>"
+                    + (id is null ? "" : "<UploadId>" + SecurityElement.Escape(id) + "</UploadId>") + "</Upload>";
+                var uploads = CleanupEvidence switch
+                {
+                    "different-key-same-id" => Upload(Record.Key + "/child", "owned+/id="),
+                    "missing-upload-id" => Upload(Record.Key, null),
+                    "outside-prefix" => Upload("other-key", "other-id"),
+                    "paginated" when second => "",
+                    _ when retained => Upload(Record.Key, "owned+/id="),
+                    "other-upload" or "paginated" or "retained-page2" or "repeated-marker" or "bad-marker" or "page-limit" => Upload(Record.Key, otherId),
+                    _ => ""
+                };
+                return SdkFixture.Xml("<ListMultipartUploadsResult><Bucket>" + (CleanupEvidence == "wrong-bucket" ? "other-bucket" : "test-bucket")
+                    + "</Bucket><Prefix>" + SecurityElement.Escape(CleanupEvidence == "wrong-prefix" ? "other-prefix" : Record.Key) + "</Prefix>"
+                    + (second ? "<KeyMarker>" + SecurityElement.Escape(Record.Key) + "</KeyMarker><UploadIdMarker>" + SecurityElement.Escape(parameters["upload-id-marker"]) + "</UploadIdMarker>" : "")
+                    + (CleanupEvidence == "malformed" ? "" : "<IsTruncated>" + truncated.ToString().ToLowerInvariant() + "</IsTruncated>")
+                    + (truncated ? "<NextKeyMarker>" + SecurityElement.Escape(Record.Key) + "</NextKeyMarker><NextUploadIdMarker>" + (CleanupEvidence == "bad-marker" ? "not-last-upload" : otherId) + "</NextUploadIdMarker>" : "")
+                    + (CleanupEvidence == "encoded" ? "<EncodingType>url</EncodingType>" : "")
+                    + (CleanupEvidence == "grouped" ? "<CommonPrefixes><Prefix>group/</Prefix></CommonPrefixes>" : "")
+                    + uploads + "</ListMultipartUploadsResult>");
+            }
             var identity = "<Bucket>test-bucket</Bucket><Key>" + SecurityElement.Escape(Record.Key) + "</Key>";
             if (stage == "create")
             {
@@ -255,6 +336,7 @@ public sealed class MultipartTests
             }
             if (stage == "list")
             {
+                if (AbortEvidence == "ceph") return SdkFixture.Xml(SdkFixture.Error("NoSuchKey"), HttpStatusCode.NotFound);
                 if (AbortEvidence is "absent" or "already-absent") return SdkFixture.Xml(SdkFixture.Error("NoSuchUpload"), HttpStatusCode.NotFound);
                 var page = Calls.Count(c => c == "list");
                 var part = Record.Multipart!.Confirmed[ListEvidence == "paginate" ? page - 1 : 0];

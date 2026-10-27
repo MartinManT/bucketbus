@@ -54,6 +54,27 @@ window-manager, assistive-technology or OS scaling qualification.
 | Empty, long-name and paged listings; change Settings | Full-value tooltips, unchanged numeric sort/exact keys, no preference-triggered requests. |
 | Active, failed and interrupted transfers; collapse/expand inspector | Progress and failure counts remain visible; contextual recovery requires the same confirmations; merely viewing never performs recovery. |
 
+### Linux touchpad troubleshooting
+
+The file lists have visible, draggable vertical scrollbars. Mouse wheel and fractional
+wheel input are checked offline; physical touchpad input needs native qualification.
+If two-finger scrolling fails on X11 while scrollbar arrows work, compare with this
+opt-in diagnostic launch after building:
+
+```bash
+dotnet run --project src/BucketBus.Desktop -c Release --no-build -- --x11-no-multitouch
+```
+
+This disables Avalonia's X11 multitouch handling for that process. It may affect
+touchscreen gestures; it does not change OS input settings. Normal launches retain
+native defaults. This is an unqualified compatibility experiment, not a confirmed
+fix for every touchpad.
+
+For providers returning `NoSuchKey` after multipart abort, BucketBus verifies absence
+through a bounded listing of in-progress uploads filtered by the exact key. This
+fallback requires `s3:ListBucketMultipartUploads`; denied or incomplete evidence keeps
+the cleanup record unresolved. It never aborts another upload or deletes an object.
+
 ## Display settings
 
 Open **Settings** in the main window to choose **Human-readable** IEC sizes

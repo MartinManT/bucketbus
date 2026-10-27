@@ -57,7 +57,7 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
     private HttpMethod _method = HttpMethod.Get;
     private int _attempts;
     private Dictionary<string, string> _query = [];
-    private bool _conditional;
+    private bool _conditional, _bucketListing;
     // Fixed allowlisted diagnostics only; never retain request values or provider text.
     public string? FailureReason { get; private set; }
     private void Reject(string reason)
@@ -78,7 +78,7 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
             throw new TransferException(TransferError.InvalidName);
         _host = profile.Settings.Addressing == AddressingStyle.VirtualHosted ? bucket + "." + _endpoint.Host : _endpoint.Host;
         _path = (profile.Settings.Addressing == AddressingStyle.Path ? "/" + bucket : "") + "/" + key;
-        _method = method; _attempts = 0; Length = null; FailureReason = null; _query = []; _conditional = method == HttpMethod.Put;
+        _method = method; _attempts = 0; Length = null; FailureReason = null; _bucketListing = false; _query = []; _conditional = method == HttpMethod.Put;
     }
     public void BeginMultipart(string bucket, string key, HttpMethod method, string? uploadId = null, int? part = null, int? marker = null, bool completing = false)
     {
@@ -88,6 +88,15 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
         if (part is { } number) _query.Add("partNumber", number.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (marker is { } value)
         { _query.Add("part-number-marker", value.ToString(System.Globalization.CultureInfo.InvariantCulture)); _query.Add("max-parts", "1000"); }
+    }
+    public void BeginMultipartListing(string bucket, string exactKey, string? keyMarker, string? uploadMarker)
+    {
+        Begin(bucket, exactKey, HttpMethod.Get);
+        _bucketListing = true;
+        _path = profile.Settings.Addressing == AddressingStyle.Path ? "/" + bucket + "/" : "/";
+        _query = new(StringComparer.Ordinal) { ["uploads"] = "", ["prefix"] = exactKey, ["max-uploads"] = "1000" };
+        if (keyMarker is not null) _query.Add("key-marker", keyMarker);
+        if (uploadMarker is not null) _query.Add("upload-id-marker", uploadMarker);
     }
     private bool QueryMatches(Uri uri)
     {
@@ -109,7 +118,7 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
         var reason = uri is null || uri.Scheme != "https" || !string.Equals(uri.Host, _host, StringComparison.OrdinalIgnoreCase)
             || uri.Port != _endpoint.Port || uri.UserInfo.Length != 0 ? "Request endpoint or authority did not match the saved profile."
             : request.Method != _method ? "Request method did not match the requested operation."
-            : Uri.UnescapeDataString(uri.AbsolutePath) != _path ? "Request path did not match the recorded bucket and key."
+            : Uri.UnescapeDataString(uri.AbsolutePath) != _path && !(_bucketListing && uri.AbsolutePath == _path.TrimEnd('/')) ? "Request path did not match the recorded bucket and key."
             : !QueryMatches(uri) ? "Multipart request parameters did not match the recorded upload."
             : ++_attempts != 1 ? "An unexpected repeat request was blocked."
             : !request.Headers.TryGetValues("Authorization", out var auth) || auth.Count() != 1
