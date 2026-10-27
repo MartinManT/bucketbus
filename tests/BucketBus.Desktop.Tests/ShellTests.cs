@@ -53,7 +53,7 @@ public sealed class ShellTests
             Assert.Same(window.FindControl<Border>("RemoteContent"), window.FocusManager.GetFocusedElement());
 
             Press(window, PhysicalKey.L, RawInputModifiers.Control);
-            Assert.Same(window.FindControl<TextBox>("RemoteLocation"), window.FocusManager.GetFocusedElement());
+            Assert.Same(window.FindControl<RemoteBrowserView>("BrowserView")!.FindControl<TextBox>("PrefixInput"), window.FocusManager.GetFocusedElement());
 
             Press(window, PhysicalKey.Tab, RawInputModifiers.Control);
             Press(window, PhysicalKey.L, RawInputModifiers.Control);
@@ -120,7 +120,7 @@ public sealed class ShellTests
             Assert.Equal("Local files pane", AutomationProperties.GetName(window.FindControl<Border>("LocalPane")!));
             Assert.Equal("Remote storage pane", AutomationProperties.GetName(window.FindControl<Border>("RemotePane")!));
             Assert.False(window.FindControl<TextBox>("LocalLocation")!.IsReadOnly);
-            Assert.True(window.FindControl<TextBox>("RemoteLocation")!.IsReadOnly);
+            Assert.False(window.FindControl<RemoteBrowserView>("BrowserView")!.FindControl<TextBox>("PrefixInput")!.IsReadOnly);
         }
         finally { window.Close(); }
     }

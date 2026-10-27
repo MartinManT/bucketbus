@@ -46,7 +46,7 @@ public sealed class BrowserViewTests
             Assert.Equal(0, heads);
             Press(window, PhysicalKey.Enter, RawInputModifiers.Alt);
             await BrowserFixture.UntilAsync(() => f.Browser.Metadata.Contains("not found", StringComparison.Ordinal));
-            Assert.Equal(1, heads); Assert.Contains("not found", view.FindControl<TextBox>("ObjectMetadata")!.Text);
+            Assert.Equal(1, heads); Assert.Contains("not found", window.FindControl<TextBox>("ObjectMetadata")!.Text);
             Press(window, PhysicalKey.Backspace);
             await BrowserFixture.UntilAsync(() => f.Browser.PrefixInput == "" && f.Browser.State == BrowserState.Ready);
             Assert.Equal(BrowserRowKind.Prefix, Assert.Single(f.Browser.Rows).Kind);
@@ -121,7 +121,7 @@ public sealed class BrowserViewTests
             var view = window.GetVisualDescendants().OfType<RemoteBrowserView>().Single();
             Assert.Same(view.FindControl<ListBox>("ObjectList"), window.FocusManager!.GetFocusedElement());
             Press(window, PhysicalKey.L, RawInputModifiers.Control);
-            Assert.Same(window.FindControl<TextBox>("RemoteLocation"), window.FocusManager.GetFocusedElement());
+            Assert.Same(window.FindControl<RemoteBrowserView>("BrowserView")!.FindControl<TextBox>("PrefixInput"), window.FocusManager.GetFocusedElement());
             var open = f.Browser.ConnectCommand.ExecuteAsync(null); await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             window.Close(); await open.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(observed.IsCancellationRequested); Assert.Equal(0, f.Factory.Created);

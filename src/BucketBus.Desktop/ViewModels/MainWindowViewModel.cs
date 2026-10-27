@@ -15,6 +15,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public LocalBrowserViewModel? Local { get; }
     public TransferViewModel? Transfers { get; }
     public RemoteBrowserViewModel? Browser { get; }
+    private int _inspectorTab;
+    public int InspectorTab { get => _inspectorTab; set => SetProperty(ref _inspectorTab, value); }
     public bool ProfilesVisible { get => _profilesVisible; private set => SetProperty(ref _profilesVisible, value); }
     public IAsyncRelayCommand ShowProfilesCommand { get; }
     public IRelayCommand CloseProfilesCommand { get; }
@@ -26,7 +28,19 @@ public sealed class MainWindowViewModel : ObservableObject
         Browser = browser;
         Local = local;
         Transfers = transfers; Settings = settings;
-        if (Browser is not null) Browser.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Browser.IsConnected)) OnPropertyChanged(nameof(StatusMessage)); };
+        if (Browser is not null) Browser.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Browser.IsConnected)) OnPropertyChanged(nameof(StatusMessage));
+            if (e.PropertyName == nameof(Browser.IsMetadataLoading) && Browser.IsMetadataLoading)
+            {
+                InspectorTab = 1;
+                if (Transfers is not null) Transfers.IsHistoryExpanded = true;
+            }
+        };
+        if (Transfers is not null) Transfers.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Transfers.SelectedHistory) && Transfers.SelectedHistory is not null) InspectorTab = 0;
+        };
         ShowProfilesCommand = new AsyncRelayCommand(async () =>
         {
             if (Profiles is null) return;

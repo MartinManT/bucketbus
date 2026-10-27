@@ -11,6 +11,7 @@ public sealed record BrowserRow(string Key, BrowserRowKind Kind, long? Size = nu
 {
     public string Name => BrowserText.Display(Key);
     public string ExactIdentity => BrowserText.Display(Key, asciiOnly: true);
+    public string Details => $"{ExactIdentity}\n{Type} · {ExactSize} · {ModifiedText}";
     public string Type => Kind switch { BrowserRowKind.Bucket => "Bucket", BrowserRowKind.Prefix => "Prefix", _ => Key.EndsWith('/') ? "Marker object" : "Object" };
     public string SizeText => Kind == BrowserRowKind.Object ? ByteSizeFormatter.Format(Size) : "—";
     public string ExactSize => Kind == BrowserRowKind.Object ? ByteSizeFormatter.Exact(Size) : "Not applicable";

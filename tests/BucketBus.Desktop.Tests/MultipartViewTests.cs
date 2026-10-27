@@ -41,6 +41,7 @@ public sealed class MultipartViewTests
     }
     [AvaloniaTheory]
     [InlineData(850, 680)] [InlineData(1180, 760)]
+    [InlineData(1920, 1080)] [InlineData(1600, 900)] [InlineData(1366, 768)] [InlineData(1280, 720)] [InlineData(1024, 768)]
     public async Task Recovery_actions_are_visible_without_scrolling_at_supported_window_sizes(int width, int height)
     {
         await using var f = new MultipartWorkflowTests.Fixture(); f.Remote.Stop = "after-ack";
@@ -54,6 +55,9 @@ public sealed class MultipartViewTests
         window.Show();
         try
         {
+            Assert.Equal("1 unresolved · 0 failed", window.FindControl<TextBlock>("TransferAttention")!.Text);
+            Assert.True(window.FindControl<TextBlock>("TransferAttention")!.IsEffectivelyVisible);
+            Assert.False(vm.IsHistoryExpanded); Assert.False(vm.ConfirmMultipart);
             window.FindControl<Expander>("TransferHistoryPanel")!.IsExpanded = true;
             Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
             foreach (var name in new[] { "Resume multipart upload", "Abort incomplete upload" })
@@ -65,6 +69,7 @@ public sealed class MultipartViewTests
                 foreach (var viewport in button.GetVisualAncestors().OfType<ScrollViewer>())
                     Assert.True(new Rect(viewport.Bounds.Size).Contains(button.TranslatePoint(center, viewport)!.Value), name + " is clipped below the history viewport");
             }
+            ResponsiveLayoutTests.Capture(window, $"ux3-recovery-{width}x{height}");
             var footer = window.FindControl<TextBlock>("ShellStatus")!;
             Assert.True(new Rect(window.Bounds.Size).Contains(new Rect(footer.TranslatePoint(default, window)!.Value, footer.Bounds.Size)), "Recovery controls push the status bar outside the window");
         }

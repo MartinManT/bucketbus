@@ -78,6 +78,8 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     }
     public double Percent { get => _percent; private set => SetProperty(ref _percent, value); }
     public bool IsEnqueuing { get => _enqueuing; private set { SetProperty(ref _enqueuing, value); NotifyCommands(); } }
+    public string AttentionSummary => !_journalAvailable ? "Journal unavailable" :
+        $"{History.Count(r => !r.Record.Resolved && r.Record.State is not (TransferState.Queued or TransferState.Running or TransferState.Pending))} unresolved · {History.Count(r => r.Record.State == TransferState.Failed)} failed";
     public string QueueSummary => $"{History.Count(r => r.Record.State == TransferState.Queued)} queued · {(IsBusy ? "1 active" : "paused / idle")} · {_completedThisRun} completed this run";
     public IAsyncRelayCommand StartQueueCommand { get; }
     public IRelayCommand PauseQueueCommand { get; }
@@ -110,7 +112,7 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     private bool Ready => _journalAvailable && !_disposed && !IsEnqueuing && _remote.IsConnected && _remote.ActiveBucket is not null && !_remote.IsBusy;
     private void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => NotifyCommands();
     private void SelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => NotifyCommands();
-    private void NotifyCommands() { OnPropertyChanged(nameof(ShowRemoveQueuedAction)); OnPropertyChanged(nameof(RecoveryGuidance)); OnPropertyChanged(nameof(ShowDownloadConfirmation)); OnPropertyChanged(nameof(ShowMultipartConfirmation)); ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); }
+    private void NotifyCommands() { OnPropertyChanged(nameof(ShowRemoveQueuedAction)); OnPropertyChanged(nameof(RecoveryGuidance)); OnPropertyChanged(nameof(ShowDownloadConfirmation)); OnPropertyChanged(nameof(ShowMultipartConfirmation)); ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); OnPropertyChanged(nameof(AttentionSummary)); }
     private bool HistoryReady => !_disposed && !IsBusy && _journalAvailable;
     public async Task InitializeAsync()
     {

@@ -1,19 +1,39 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:BucketBus.Desktop.ViewModels"
-        xmlns:design="using:BucketBus.Desktop.Design"
-        xmlns:local="using:BucketBus.Desktop"
-        x:Class="BucketBus.Desktop.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
-        Title="BucketBus" Width="1180" Height="760" MinWidth="850" MinHeight="680"
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:BucketBus.Desktop.ViewModels" xmlns:design="using:BucketBus.Desktop.Design"
+        xmlns:local="using:BucketBus.Desktop" x:Class="BucketBus.Desktop.MainWindow" x:DataType="vm:MainWindowViewModel"
+        Title="BucketBus" Width="1180" Height="760" MinWidth="850" MinHeight="680" Classes="desktop"
         Design.DataContext="{x:Static design:DesignData.Preview}">
-  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="16" RowSpacing="8">
-    <Grid ColumnDefinitions="*,Auto">
-      <StackPanel Spacing="3">
-        <TextBlock Text="BucketBus" FontSize="26" FontWeight="SemiBold" />
-        <TextBlock Classes="secondary" Text="Local files and S3 storage" />
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="6" RowSpacing="4">
+    <Grid ColumnDefinitions="*,Auto,Auto">
+      <Menu AutomationProperties.Name="Application menu">
+        <MenuItem Header="_File">
+          <MenuItem Header="Connection _profiles…" Command="{Binding ShowProfilesCommand}" />
+          <MenuItem Header="Back to file panes" Command="{Binding CloseProfilesCommand}" />
+          <Separator /><MenuItem Header="E_xit" Click="ExitClick" />
+        </MenuItem>
+        <MenuItem Header="_Local" IsEnabled="{Binding !ProfilesVisible}">
+          <MenuItem Header="Home" Command="{Binding Local.HomeCommand}" /><MenuItem Header="Up" Command="{Binding Local.UpCommand}" />
+          <MenuItem Header="Refresh" Command="{Binding Local.RefreshCommand}" InputGesture="Ctrl+R" />
+          <MenuItem Header="Upload selected files" Command="{Binding Transfers.UploadCommand}" InputGesture="Ctrl+U" />
+        </MenuItem>
+        <MenuItem Header="_Remote" IsEnabled="{Binding !ProfilesVisible}">
+          <MenuItem Header="Reload profiles" Command="{Binding Browser.ReloadProfilesCommand}" />
+          <MenuItem Header="Disconnect" Command="{Binding Browser.DisconnectCommand}" />
+          <MenuItem Header="Properties" Command="{Binding Browser.PropertiesCommand}" InputGesture="Alt+Enter" />
+          <MenuItem Header="Download selected objects" Command="{Binding Transfers.DownloadCommand}" InputGesture="Ctrl+D" />
+        </MenuItem>
+        <MenuItem Header="_Transfers">
+          <MenuItem Header="Queue / History and Recovery" Click="ShowTransfersClick" />
+          <MenuItem Header="Start / Continue" Command="{Binding Transfers.StartQueueCommand}" />
+          <MenuItem Header="Pause after current" Command="{Binding Transfers.PauseQueueCommand}" />
+          <MenuItem Header="Cancel active" Command="{Binding Transfers.CancelCommand}" />
+          <MenuItem Header="Reload history" Command="{Binding Transfers.ReloadHistoryCommand}" />
+        </MenuItem>
+      </Menu>
+      <StackPanel x:Name="PaneSwitch" Grid.Column="1" Orientation="Horizontal" IsVisible="False">
+        <Button Content="Local" Click="LocalClick" /><Button Content="Remote" Click="RemoteClick" />
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
         <Button x:Name="SettingsButton" Content="Settings" AutomationProperties.Name="Display settings">
           <Button.Flyout><Flyout>
             <StackPanel x:Name="SettingsPanel" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel" Width="300" Spacing="8">
@@ -32,10 +52,8 @@
           </Flyout></Button.Flyout>
         </Button>
         <Button Content="Profiles" Command="{Binding ShowProfilesCommand}" />
-        <TextBlock Text="Pre-alpha · Sequential transfers" />
       </StackPanel>
     </Grid>
-
     <StackPanel Grid.Row="1" Spacing="8">
       <ProgressBar x:Name="StartupProgress" Height="3" IsIndeterminate="True"
                    IsVisible="{Binding IsLoading}" AutomationProperties.Name="Starting BucketBus" />
@@ -48,91 +66,109 @@
       </Border>
     </StackPanel>
 
-    <Grid Grid.Row="2" ColumnDefinitions="*,12,*" IsVisible="{Binding !ProfilesVisible}">
-      <Border x:Name="LocalPane" Classes="pane" Padding="16" MinWidth="280"
+    <Grid Grid.Row="2" x:Name="PaneGrid" ColumnDefinitions="*,6,*" IsVisible="{Binding !ProfilesVisible}">
+      <Border x:Name="LocalPane" Classes="pane" Padding="6" MinWidth="0"
               AutomationProperties.Name="Local files pane">
-        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
-          <TextBlock Text="LOCAL" FontWeight="SemiBold" />
-          <TextBox x:Name="LocalLocation" Grid.Row="1" Text="{Binding Local.PathInput}"
+        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="4">
+          <Grid ColumnDefinitions="Auto,*"><TextBlock Text="LOCAL" FontWeight="SemiBold" /><local:BreadcrumbBar Grid.Column="1" Items="{Binding Local.Breadcrumbs}" NavigateCommand="{Binding Local.NavigateCommand}" /></Grid>
+          <TextBox x:Name="LocalLocation" Grid.Row="1" Text="{Binding Local.PathInput}" MinHeight="24" Padding="4,0"
                    PlaceholderText="Absolute directory path" ToolTip.Tip="Enter an absolute directory path and press Enter." AutomationProperties.Name="Local location" TabIndex="0" />
           <Border x:Name="LocalContent" Grid.Row="2" Focusable="True" TabIndex="1"
                   AutomationProperties.Name="Local filesystem browser">
-            <local:LocalBrowserView x:Name="LocalView" DataContext="{Binding Local}" />
+            <local:LocalBrowserView x:Name="LocalView" DataContext="{Binding Local}" UploadCommand="{ReflectionBinding DataContext.Transfers.UploadCommand, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" />
           </Border>
         </Grid>
       </Border>
-      <GridSplitter Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch"
+      <GridSplitter x:Name="PaneSplitter" Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch"
                     AutomationProperties.Name="Resize file panes" TabIndex="2" />
-      <Border x:Name="RemotePane" Grid.Column="2" Classes="pane" Padding="16" MinWidth="280"
+      <Border x:Name="RemotePane" Grid.Column="2" Classes="pane" Padding="6" MinWidth="0"
               AutomationProperties.Name="Remote storage pane">
-        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
-          <TextBlock Text="REMOTE" FontWeight="SemiBold" />
-          <TextBox x:Name="RemoteLocation" Grid.Row="1" IsReadOnly="True" Text="{Binding Browser.Location}"
-                   AutomationProperties.Name="Remote location" TabIndex="3" />
-          <Border x:Name="RemoteContent" Grid.Row="2" Focusable="True" TabIndex="4"
+        <Grid RowDefinitions="Auto,*" RowSpacing="4">
+          <Grid ColumnDefinitions="Auto,*"><TextBlock Text="REMOTE" FontWeight="SemiBold" /><local:BreadcrumbBar Grid.Column="1" Items="{Binding Browser.Breadcrumbs}" NavigateCommand="{Binding Browser.NavigateBreadcrumbCommand}" /></Grid>
+          <Border x:Name="RemoteContent" Grid.Row="1" Focusable="True" TabIndex="4"
                   AutomationProperties.Name="Remote storage browser">
-            <local:RemoteBrowserView x:Name="BrowserView" DataContext="{Binding Browser}" />
+            <local:RemoteBrowserView x:Name="BrowserView" DataContext="{Binding Browser}" DownloadCommand="{ReflectionBinding DataContext.Transfers.DownloadCommand, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" />
           </Border>
         </Grid>
       </Border>
     </Grid>
 
-    <Grid Grid.Row="2" IsVisible="{Binding ProfilesVisible}" RowDefinitions="Auto,*" RowSpacing="8">
+    <Grid Grid.Row="2" IsVisible="{Binding ProfilesVisible}" RowDefinitions="Auto,*" RowSpacing="4">
       <Button Content="Back to panes" Command="{Binding CloseProfilesCommand}" />
       <local:ProfileManagementView Grid.Row="1" DataContext="{Binding Profiles}" />
     </Grid>
 
-    <Border Grid.Row="3" Padding="16" CornerRadius="6" BorderThickness="1"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-      <StackPanel Spacing="6">
-        <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="Transfers" FontWeight="SemiBold" /><TextBlock Text="{Binding Transfers.QueueSummary}" Classes="secondary" /></StackPanel>
-        <TextBlock x:Name="UploadProviderNotice" Classes="secondary" Text="Upload collision protection depends on the provider honoring create-only requests." TextWrapping="Wrap" />
-        <WrapPanel Orientation="Horizontal">
-          <Button x:Name="UploadFile" Content="Add selected uploads (Ctrl+U)" Margin="0,0,6,0" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.UploadCommand}" />
-          <Button x:Name="DownloadFile" Content="Add selected downloads (Ctrl+D)" Margin="0,0,6,0" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.DownloadCommand}" />
-          <Button Content="Start / Continue" Command="{Binding Transfers.StartQueueCommand}" Margin="0,0,6,0" />
-          <Button Content="Pause after current" Command="{Binding Transfers.PauseQueueCommand}" Margin="0,0,6,0" />
-          <Button x:Name="CancelTransfer" Content="Cancel active" Command="{Binding Transfers.CancelCommand}" />
-        </WrapPanel>
-        <TextBlock Text="{Binding Transfers.Source}" TextTrimming="CharacterEllipsis" />
-        <TextBlock Text="{Binding Transfers.Destination}" TextTrimming="CharacterEllipsis" />
-        <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding Transfers.Percent}" IsVisible="{Binding Transfers.IsBusy}" />
-        <TextBlock Text="{Binding Transfers.Bytes}" ToolTip.Tip="{Binding Transfers.ExactBytes}" />
-        <TextBlock x:Name="TransferStatus" Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
-        <Expander x:Name="TransferHistoryPanel" Header="Transfer queue, history and recovery" IsExpanded="{Binding Transfers.IsHistoryExpanded}" HorizontalAlignment="Stretch">
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-            <StackPanel Spacing="5">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <TextBlock Text="{Binding Transfers.HistoryStatus}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Transfers.HistoryStatus}" FontSize="12" VerticalAlignment="Center" />
+
+    <Border Grid.Row="3" Classes="pane" Padding="6">
+      <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <Button x:Name="UploadFile" Content="Upload ↑" ToolTip.Tip="Add selected uploads (Ctrl+U). Collision protection requires provider support for create-only requests." IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.UploadCommand}" />
+            <Button x:Name="DownloadFile" Content="Download ↓" ToolTip.Tip="Add selected downloads (Ctrl+D)" IsEnabled="{Binding !ProfilesVisible}" Command="{Binding Transfers.DownloadCommand}" />
+            <Button Content="Start / Continue" Command="{Binding Transfers.StartQueueCommand}" />
+            <Button Content="Pause" ToolTip.Tip="Pause after current transfer" Command="{Binding Transfers.PauseQueueCommand}" />
+            <Button x:Name="CancelTransfer" Content="Cancel" ToolTip.Tip="Cancel active transfer" Command="{Binding Transfers.CancelCommand}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" x:Name="QueueSummary" Text="{Binding Transfers.QueueSummary}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Transfers.QueueSummary}" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="2" x:Name="TransferAttention" Text="{Binding Transfers.AttentionSummary}" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8">
+          <TextBlock x:Name="TransferStatus" Text="{Binding Transfers.Status}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Transfers.Status}" />
+          <TextBlock Grid.Column="1" Text="{Binding Transfers.Bytes}" ToolTip.Tip="{Binding Transfers.ExactBytes}" />
+          <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Height="3" Minimum="0" Maximum="100" Value="{Binding Transfers.Percent}" IsVisible="{Binding Transfers.IsBusy}" />
+        </Grid>
+        <Expander Grid.Row="2" x:Name="TransferHistoryPanel" Padding="0" MinHeight="0" IsExpanded="{Binding Transfers.IsHistoryExpanded}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+          <Expander.Header><TextBlock Text="Queue / History · Properties · Recovery" /></Expander.Header>
+          <Grid x:Name="InspectorContent" ColumnDefinitions="*,*" ColumnSpacing="8" Height="230">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="4">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Queue / History" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <Button Grid.Column="1" Content="Reload history" Command="{Binding Transfers.ReloadHistoryCommand}" />
               </Grid>
-              <ListBox x:Name="TransferHistory" ItemsSource="{Binding Transfers.History}" SelectedItem="{Binding Transfers.SelectedHistory}" MaxHeight="80">
-                <ListBox.ItemTemplate><DataTemplate x:DataType="vm:TransferHistoryRow"><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ListBox.ItemTemplate>
+              <ListBox Grid.Row="1" x:Name="TransferHistory" ItemsSource="{Binding Transfers.History}" SelectedItem="{Binding Transfers.SelectedHistory}">
+                <ListBox.ItemTemplate><DataTemplate x:DataType="vm:TransferHistoryRow"><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Details}" /></DataTemplate></ListBox.ItemTemplate>
               </ListBox>
-              <ScrollViewer MaxHeight="28"><TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" FontSize="12" /></ScrollViewer>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Spacing="5">
-              <TextBlock Text="{Binding Transfers.RecoveryGuidance}" TextWrapping="Wrap" FontSize="12" />
-              <CheckBox Content="Confirm whole-file download restart" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" IsChecked="{Binding Transfers.ConfirmRestart}" />
-              <CheckBox Content="Confirm multipart recovery action" IsVisible="{Binding Transfers.ShowMultipartConfirmation}" IsChecked="{Binding Transfers.ConfirmMultipart}" />
-              <CheckBox Content="Allow vault unlock prompt" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
-              <WrapPanel Orientation="Horizontal">
-                <Button Content="Remove queued job" IsVisible="{Binding Transfers.ShowRemoveQueuedAction}" Command="{Binding Transfers.RemoveQueuedCommand}" />
-                <Button Content="Reconcile upload" IsVisible="{Binding Transfers.SelectedHistory.Record.CanReconcile}" Command="{Binding Transfers.ReconcileCommand}" />
-                <Button Content="Restart download" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" Command="{Binding Transfers.RestartCommand}" />
-                <Button Content="Resume multipart upload" FontSize="12" IsVisible="{Binding Transfers.SelectedHistory.Record.CanResumeMultipart}" Command="{Binding Transfers.ResumeMultipartCommand}" />
-                <Button Content="Abort incomplete upload" FontSize="12" IsVisible="{Binding Transfers.SelectedHistory.Record.CanAbortMultipart}" Command="{Binding Transfers.AbortMultipartCommand}" />
-                <Button Content="Dismiss resolved" IsVisible="{Binding Transfers.SelectedHistory.Record.Resolved}" Command="{Binding Transfers.DismissCommand}" />
-              </WrapPanel>
-            </StackPanel>
+              <TextBlock Grid.Row="2" Text="{Binding Transfers.HistoryStatus}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Transfers.HistoryStatus}" />
+            </Grid>
+            <TabControl Grid.Column="1" x:Name="InspectorTabs" SelectedIndex="{Binding InspectorTab}">
+              <TabItem Header="Recovery">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel Spacing="4" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding Transfers.RecoveryGuidance}" TextWrapping="Wrap" />
+                    <CheckBox Content="Confirm whole-file download restart" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" IsChecked="{Binding Transfers.ConfirmRestart}" />
+                    <CheckBox Content="Confirm multipart recovery action" IsVisible="{Binding Transfers.ShowMultipartConfirmation}" IsChecked="{Binding Transfers.ConfirmMultipart}" />
+                    <CheckBox Content="Allow vault unlock prompt" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
+                    <WrapPanel Orientation="Horizontal">
+                      <Button Content="Remove queued job" IsVisible="{Binding Transfers.ShowRemoveQueuedAction}" Command="{Binding Transfers.RemoveQueuedCommand}" />
+                      <Button Content="Reconcile upload" IsVisible="{Binding Transfers.SelectedHistory.Record.CanReconcile}" Command="{Binding Transfers.ReconcileCommand}" />
+                      <Button Content="Restart download" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" Command="{Binding Transfers.RestartCommand}" />
+                      <Button Content="Resume multipart upload" IsVisible="{Binding Transfers.SelectedHistory.Record.CanResumeMultipart}" Command="{Binding Transfers.ResumeMultipartCommand}" />
+                      <Button Content="Abort incomplete upload" IsVisible="{Binding Transfers.SelectedHistory.Record.CanAbortMultipart}" Command="{Binding Transfers.AbortMultipartCommand}" />
+                      <Button Content="Dismiss resolved" IsVisible="{Binding Transfers.SelectedHistory.Record.Resolved}" Command="{Binding Transfers.DismissCommand}" />
+                    </WrapPanel>
+
+                    <Expander Header="Operation details" HorizontalAlignment="Stretch">
+                      <TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" />
+                    </Expander>
+                    <TextBlock Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="UploadProviderNotice" Classes="secondary" Text="Upload collision protection depends on the provider honoring create-only requests." TextWrapping="Wrap" />
+                  </StackPanel>
+                </ScrollViewer>
+              </TabItem>
+              <TabItem Header="Properties">
+                <Grid RowDefinitions="Auto,*">
+                  <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding Browser.IsMetadataLoading}" />
+                  <TextBox Grid.Row="1" x:Name="ObjectMetadata" Text="{Binding Browser.Metadata, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AutomationProperties.Name="Object metadata as text" />
+                </Grid>
+              </TabItem>
+            </TabControl>
           </Grid>
         </Expander>
-      </StackPanel>
+      </Grid>
     </Border>
-
     <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
       <TextBlock x:Name="ShellStatus" Classes="secondary" Text="{Binding StatusMessage}" />
-      <TextBlock Grid.Column="1" Classes="secondary" Text="Ctrl+Tab  Switch pane     Ctrl+L  Focus location" />
+      <TextBlock Grid.Column="1" Classes="secondary" Text="Ctrl+Tab  Switch pane     Ctrl+L  Location" />
     </Grid>
   </Grid>
 </Window>

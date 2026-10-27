@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using BucketBus.Desktop.Presentation;
 using System.Globalization;
 using BucketBus.Core;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,6 +13,7 @@ public sealed record LocalRow(LocalEntry Entry)
 {
     public string Name => BrowserText.Display(Entry.Name);
     public string Identity => BrowserText.Display(Entry.FullPath, true);
+    public string Details => $"{Identity}\n{Type} · {ExactSize} · {ModifiedText}";
     public string Type => Entry.Kind switch
     {
         LocalEntryKind.Directory => "Folder", LocalEntryKind.File => "File",
@@ -36,7 +38,8 @@ public sealed class LocalBrowserViewModel : ObservableObject, IDisposable
     private IReadOnlyList<string> _roots = [];
     private LocalSortField _sort = LocalSortField.Name;
     public string PathInput { get => _pathInput; set => SetProperty(ref _pathInput, value); }
-    public string DirectoryPath { get => _directory; private set { if (SetProperty(ref _directory, value)) UpCommand.NotifyCanExecuteChanged(); } }
+    public string DirectoryPath { get => _directory; private set { if (SetProperty(ref _directory, value)) { UpCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(Breadcrumbs)); } } }
+    public IReadOnlyList<LocationCrumb> Breadcrumbs => LocationCrumb.Local(DirectoryPath);
     public string Status { get => _status; private set => SetProperty(ref _status, value); }
     public LocalBrowserState State { get => _state; private set { if (SetProperty(ref _state, value)) { OnPropertyChanged(nameof(IsBusy)); CancelCommand.NotifyCanExecuteChanged(); } } }
     public bool IsBusy => State == LocalBrowserState.Loading;

@@ -18,6 +18,42 @@ identity and partial resume are not promised. Application restart never resumes 
 attempt or retry delay automatically. No PUT is automatically replayed, including
 a lost response, timeout, cancellation or HTTP 5xx.
 
+## Compact desktop workspace
+
+The menu bar holds global actions; the Remote **⋯** menu holds Reload profiles,
+Disconnect and Cancel request. **Unlock** is explicit consent to a vault prompt
+for Connect and stays off until selected. Breadcrumb buttons navigate using original
+paths/prefixes, including empty S3 segments. Ctrl+L focuses the local path or the
+remote prefix editor. Right-click lists for context actions on the current selection.
+
+The Local/Remote splitter keeps both panes usable. Below 960 device-independent
+pixels of client width, **Local / Remote** buttons and Ctrl+Tab switch the same panes
+without resetting navigation or selection. Narrow tables hide Modified/Type; row
+tooltips retain the full identity, exact bytes, type and timestamp. Local sort actions
+for hidden columns remain in the context menu.
+
+The compact transfer strip keeps active progress and unresolved/failed counts visible.
+Expand **Queue / History · Properties · Recovery** for the single bottom inspector.
+Select a transfer on the left for Recovery; **Operation details** contains the full
+record. Object **Properties** / Alt+Enter opens the Properties tab on demand. Recovery
+eligibility, explicit confirmations and vault consent are unchanged. Collapsing the
+inspector never dismisses, resumes or cancels work. View layout is session-only;
+existing display preferences continue to persist through Settings.
+
+### UX-3 native acceptance checks
+
+Run on Fedora/Openbox and Windows 11 when available. Headless rendering is not native
+window-manager, assistive-technology or OS scaling qualification.
+
+| Check | Expected result |
+| --- | --- |
+| Client sizes 1920×1080, 1600×900, 1366×768, 1280×720, 1024×768 DIP | Two usable panes; no off-window controls; file panes dominate with inspector collapsed. |
+| Resize to 850×680 DIP and back; drag pane splitter | Local/Remote switch appears below 960 DIP; exact selection, paths and scroll state stay intact. |
+| OS scaling 100%, 125%, 150%, 200% where screen size permits | Readable text, visible focus and accessible menus; distinguish client DIP from physical pixels. |
+| Tab/Shift+Tab, Ctrl+Tab/L/R/U/D, Enter, Backspace, Alt+Enter, right-click multi-selection | Existing actions and text editing work; Properties opens one inspector; hidden sort columns remain accessible. |
+| Empty, long-name and paged listings; change Settings | Full-value tooltips, unchanged numeric sort/exact keys, no preference-triggered requests. |
+| Active, failed and interrupted transfers; collapse/expand inspector | Progress and failure counts remain visible; contextual recovery requires the same confirmations; merely viewing never performs recovery. |
+
 ## Display settings
 
 Open **Settings** in the main window to choose **Human-readable** IEC sizes
@@ -127,8 +163,8 @@ Manual smoke test on a graphical desktop:
 ## Sequential transfer queue (pre-alpha)
 
 Navigate the local pane to a directory and the remote pane to a bucket/prefix.
-Select regular local files and choose **Add selected uploads** (Ctrl+U), or select
-objects on the current remote page and choose **Add selected downloads** (Ctrl+D).
+Select regular local files and choose **Upload ↑** (Ctrl+U), or select
+objects on the current remote page and choose **Download ↓** (Ctrl+D).
 Ctrl/Shift selection works in both panes. Folders, links, S3 prefixes and unselected
 pages are never recursively added. Choose **Start / Continue** to process the
 persisted jobs in FIFO order, with one active transfer.
@@ -137,7 +173,7 @@ More files can be added while a transfer runs. **Pause after current** lets that
 transfer finish; **Cancel active** requests cancellation and stops scheduling.
 An error, cancellation, cleanup obligation or uncertain result stops the queue;
 remaining jobs stay queued until explicit continuation. Eligible transient downloads receive at most three whole-file attempts; uploads
-are never automatically retried. Expand **Transfer queue, history and recovery** for individual states,
+are never automatically retried. Expand **Queue / History · Properties · Recovery** for individual states,
 position, progress, exact targets, never-started removal and existing recovery
 controls. Paths/full keys stay in details rather than every collapsed row.
 
@@ -213,7 +249,7 @@ These reads preserve integrity and durable reconciliation at an intentional I/O 
 no whole-file memory buffer or temporary source copy is created.
 
 Transfers are now recorded in a per-user SQLite journal before destination effects.
-Expand **Transfer history and recovery** to inspect previous results and unresolved
+Expand **Queue / History · Properties · Recovery** to inspect previous results and unresolved
 operations without connecting to S3. Startup never replays work or cleans temporary
 files. Explicit upload reconciliation requires the saved operation ID and full
 SHA-256 read-back; absence, denial or a mismatch remains unresolved, and upload
@@ -233,8 +269,8 @@ paginated `ListParts`. An unacknowledged part disables resume: no guess is made 
 its contents or whether its request remains in flight. Abort affects only the recorded
 upload ID, never an object, and checks absence after acknowledgement. After confirmed
 abort cleanup, add the file again to start over. Closing the application requests
-cancellation; it does not remove unresolved uploads. Recovery controls sit beside the
-scrollable history details, with guidance for the selected record. An uncertain
+cancellation; it does not remove unresolved uploads. Recovery controls are in the bottom inspector’s Recovery tab beside the
+scrollable history list, with guidance for the selected record. An uncertain
 completion allows only full-content reconciliation; it cannot be replayed or aborted.
 An unknown upload ID cannot be cleaned up by BucketBus. Retain the evidence for
 provider investigation; incomplete parts may consume storage. No lifecycle policies

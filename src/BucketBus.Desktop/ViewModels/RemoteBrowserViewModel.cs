@@ -1,4 +1,5 @@
 using Avalonia.Threading;
+using BucketBus.Desktop.Presentation;
 using BucketBus.Core;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -37,6 +38,21 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     public string? ActiveBucket => _bucket;
     public string ActivePrefix => _prefix;
     public bool IsConnected => _session is { IsInvalidated: false };
+    private string? _crumbBucket, _crumbPrefix;
+    private IReadOnlyList<LocationCrumb> _crumbs = [];
+    public IReadOnlyList<LocationCrumb> Breadcrumbs
+    {
+        get
+        {
+            if (_crumbBucket != _bucket || _crumbPrefix != _prefix)
+            {
+                _crumbBucket = _bucket; _crumbPrefix = _prefix;
+                _crumbs = _bucket is null ? [] : LocationCrumb.Remote(_bucket, _prefix);
+            }
+            return _crumbs;
+        }
+    }
+    public IAsyncRelayCommand<string> NavigateBreadcrumbCommand { get; }
     public string Location => !IsConnected ? "Not connected" : _bucket is null ? "Buckets" : BrowserText.Display(_bucket + " / " + _prefix);
     public string PageSummary => _index < 0 ? "No page loaded" : $"Page {_firstPage + _index} · {Rows.Count} rows · {_pages.Count}/5 cached pages · Server order; not a whole-bucket total";
     public System.Collections.ObjectModel.ObservableCollection<BrowserRow> SelectedRows { get; } = [];
@@ -89,6 +105,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => SelectedProfile is not null, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         DisconnectCommand = new RelayCommand(Disconnect);
         CancelCommand = new RelayCommand(Cancel, () => IsBusy || IsMetadataLoading);
+        NavigateBreadcrumbCommand = new AsyncRelayCommand<string>(prefix => NavigateAsync(_bucket, prefix ?? ""), _ => IsConnected && _bucket is not null, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         GoCommand = new AsyncRelayCommand(() => NavigateAsync(string.IsNullOrEmpty(BucketInput) ? null : BucketInput, PrefixInput), () => IsConnected, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         RefreshCommand = new AsyncRelayCommand(() => NavigateAsync(_bucket, _prefix, SelectedRow), () => IsConnected, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         UpCommand = new AsyncRelayCommand(UpAsync, () => IsConnected && _bucket is not null, AsyncRelayCommandOptions.AllowConcurrentExecutions);
@@ -105,6 +122,7 @@ public sealed partial class RemoteBrowserViewModel : ObservableObject, IDisposab
     partial void OnIsMetadataLoadingChanged(bool value) => NotifyCommands();
     private void NotifyCommands()
     {
+        NavigateBreadcrumbCommand?.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(Breadcrumbs));
         ConnectCommand?.NotifyCanExecuteChanged(); GoCommand?.NotifyCanExecuteChanged(); RefreshCommand?.NotifyCanExecuteChanged();
         UpCommand?.NotifyCanExecuteChanged(); OpenCommand?.NotifyCanExecuteChanged(); NextCommand?.NotifyCanExecuteChanged();
         PreviousCommand?.NotifyCanExecuteChanged(); PropertiesCommand?.NotifyCanExecuteChanged(); CancelCommand?.NotifyCanExecuteChanged();

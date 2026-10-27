@@ -1,53 +1,51 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:BucketBus.Desktop.ViewModels"
-             xmlns:core="using:BucketBus.Core"
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:BucketBus.Desktop" xmlns:vm="using:BucketBus.Desktop.ViewModels" xmlns:core="using:BucketBus.Core"
              x:Class="BucketBus.Desktop.RemoteBrowserView" x:DataType="vm:RemoteBrowserViewModel">
-  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" RowSpacing="6">
-    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="4">
+    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="4">
       <ComboBox x:Name="BrowserProfiles" ItemsSource="{Binding ProfilesList}" SelectedItem="{Binding SelectedProfile}"
-                HorizontalAlignment="Stretch" PlaceholderText="Select a saved profile" AutomationProperties.Name="Connection profile">
-        <ComboBox.ItemTemplate><DataTemplate x:DataType="core:ConnectionProfile"><TextBlock Text="{Binding Settings.Name}" /></DataTemplate></ComboBox.ItemTemplate>
+                HorizontalAlignment="Stretch" PlaceholderText="Select a profile" AutomationProperties.Name="Connection profile">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="core:ConnectionProfile"><TextBlock Text="{Binding Settings.Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Settings.Name}" /></DataTemplate></ComboBox.ItemTemplate>
       </ComboBox>
-      <Button Grid.Column="1" Content="Reload profiles" Command="{Binding ReloadProfilesCommand}" />
+      <Button Grid.Column="1" x:Name="ConnectButton" Content="Connect" Command="{Binding ConnectCommand}" />
+      <CheckBox Grid.Column="2" x:Name="VaultConsent" Content="Unlock" ToolTip.Tip="Allow vault unlock prompt for Connect" IsChecked="{Binding AllowUnlock}" AutomationProperties.Name="Allow vault unlock prompt" />
+      <Button Grid.Column="3" Content="↻" ToolTip.Tip="Refresh (Ctrl+R)" AutomationProperties.Name="Refresh remote listing" Command="{Binding RefreshCommand}" />
+      <Button Grid.Column="4" Content="⋯" AutomationProperties.Name="Connection actions">
+        <Button.Flyout><MenuFlyout>
+          <MenuItem Header="Reload profiles" Command="{Binding ReloadProfilesCommand}" />
+          <MenuItem Header="Disconnect" Command="{Binding DisconnectCommand}" />
+          <MenuItem Header="Cancel request" Command="{Binding CancelCommand}" />
+        </MenuFlyout></Button.Flyout>
+      </Button>
     </Grid>
-    <WrapPanel Grid.Row="1">
-      <Button x:Name="ConnectButton" Content="Connect" Command="{Binding ConnectCommand}" Margin="0,0,6,0" />
-      <Button Content="Disconnect" Command="{Binding DisconnectCommand}" Margin="0,0,6,0" />
-      <CheckBox Content="Allow vault unlock prompt" IsChecked="{Binding AllowUnlock}" />
-    </WrapPanel>
-    <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-      <TextBlock Text="Bucket" VerticalAlignment="Center" />
-      <TextBox Grid.Column="1" x:Name="BucketInput" Text="{Binding BucketInput}" PlaceholderText="Empty = discover buckets" AutomationProperties.Name="Bucket to browse" />
-      <Button Grid.Column="2" x:Name="GoButton" Content="Go" Command="{Binding GoCommand}" />
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,2*,3*,Auto" ColumnSpacing="4">
+      <Button Content="Up" Command="{Binding UpCommand}" />
+      <TextBox Grid.Column="1" x:Name="BucketInput" Text="{Binding BucketInput}" PlaceholderText="Bucket (empty = discover)" AutomationProperties.Name="Bucket to browse" ToolTip.Tip="{Binding BucketInput}" />
+      <TextBox Grid.Column="2" x:Name="PrefixInput" Text="{Binding PrefixInput}" PlaceholderText="Exact prefix" AutomationProperties.Name="Exact S3 prefix" ToolTip.Tip="{Binding PrefixInput}" />
+      <Button Grid.Column="3" x:Name="GoButton" Content="Go" Command="{Binding GoCommand}" />
     </Grid>
-    <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="6">
-      <TextBlock Text="Prefix" VerticalAlignment="Center" />
-      <TextBox Grid.Column="1" x:Name="PrefixInput" Text="{Binding PrefixInput}" PlaceholderText="Exact prefix" AutomationProperties.Name="Exact S3 prefix" />
-    </Grid>
-    <StackPanel Grid.Row="4" Spacing="4">
-      <WrapPanel>
-        <Button Content="Up" Command="{Binding UpCommand}" Margin="0,0,6,0" />
-        <Button Content="Open" Command="{Binding OpenCommand}" Margin="0,0,6,0" />
-        <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,6,0" />
-        <Button x:Name="PropertiesButton" Content="Properties" Command="{Binding PropertiesCommand}" Margin="0,0,6,0" />
-        <Button Content="Cancel request" Command="{Binding CancelCommand}" />
-      </WrapPanel>
+    <StackPanel Grid.Row="2" Spacing="2">
       <ProgressBar x:Name="BrowserProgress" Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy}" AutomationProperties.Name="Loading storage" />
       <TextBlock x:Name="BrowserStatus" Text="{Binding Status}" TextWrapping="Wrap" />
-      <Grid ColumnDefinitions="*,90,135,85">
+      <local:FileColumnsGrid Classes="fileColumns">
         <TextBlock Text="Name / key" /><TextBlock Grid.Column="1" Text="Size" />
-        <TextBlock Grid.Column="2" Text="Modified" /><TextBlock Grid.Column="3" Text="Type" />
-      </Grid>
+        <TextBlock Classes="detailColumn" Grid.Column="2" Text="Modified" /><TextBlock Classes="detailColumn" Grid.Column="3" Text="Type" />
+      </local:FileColumnsGrid>
     </StackPanel>
-    <ListBox Grid.Row="5" x:Name="ObjectList" Focusable="True" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" SelectedItems="{Binding SelectedRows, Mode=OneWay}" SelectionMode="Multiple"
+    <ListBox Grid.Row="3" x:Name="ObjectList" Focusable="True" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" SelectedItems="{Binding SelectedRows, Mode=OneWay}" SelectionMode="Multiple"
              MinHeight="80" AutomationProperties.Name="Remote buckets, prefixes and objects"
-             ScrollViewer.HorizontalScrollBarVisibility="Auto">
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ContextMenu><ContextMenu>
+        <MenuItem Header="Open" Command="{Binding OpenCommand}" />
+        <MenuItem Header="Properties" Command="{Binding PropertiesCommand}" InputGesture="Alt+Enter" />
+        <MenuItem Header="Download selected objects" x:Name="DownloadContextItem" />
+        <Separator /><MenuItem Header="Refresh" Command="{Binding RefreshCommand}" />
+      </ContextMenu></ListBox.ContextMenu>
       <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListBox.Styles>
       <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:BrowserRow">
-          <Grid ColumnDefinitions="*,90,135,85" ColumnSpacing="4" ToolTip.Tip="{Binding ExactIdentity}">
+          <local:FileColumnsGrid Classes="fileColumns" ColumnSpacing="4" ToolTip.Tip="{Binding Details}">
             <TextBlock TextTrimming="CharacterEllipsis" MinWidth="80">
               <TextBlock.Text><MultiBinding Converter="{StaticResource RemoteName}">
                 <Binding Path="Key" /><Binding Path="Kind" />
@@ -60,24 +58,19 @@
                 <Binding Path="Size" /><ReflectionBinding Path="DataContext.Display.Current" RelativeSource="{RelativeSource FindAncestor, AncestorType={x:Type UserControl}}" /><Binding Path="Kind" />
               </MultiBinding></TextBlock.Text>
             </TextBlock>
-            <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="3" Text="{Binding Type}" />
-          </Grid>
+            <TextBlock Classes="detailColumn" Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="detailColumn" Grid.Column="3" Text="{Binding Type}" />
+          </local:FileColumnsGrid>
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
-    <StackPanel Grid.Row="6" Spacing="4">
-      <StackPanel Orientation="Horizontal" Spacing="6">
-        <Button x:Name="PreviousPage" Content="Previous cached page" Command="{Binding PreviousCommand}" />
-        <Button x:Name="NextPage" Content="Next page" Command="{Binding NextCommand}" />
-      </StackPanel>
-      <TextBlock Text="{Binding PageSummary}" TextWrapping="Wrap" FontSize="11" />
-      <TextBlock Text="{Binding SelectionIdentity}" TextWrapping="Wrap" MaxHeight="44" ToolTip.Tip="{Binding SelectionIdentity}" FontSize="11" />
-    </StackPanel>
-    <ProgressBar Grid.Row="7" Height="3" IsIndeterminate="True" IsVisible="{Binding IsMetadataLoading}" AutomationProperties.Name="Loading object metadata" />
-    <Expander Grid.Row="8" Header="Object metadata" IsExpanded="{Binding MetadataVisible}" HorizontalAlignment="Stretch">
-      <TextBox x:Name="ObjectMetadata" Text="{Binding Metadata, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="120"
-               AutomationProperties.Name="Object metadata as text" />
-    </Expander>
+
+    <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="4">
+      <Button x:Name="PreviousPage" Content="←" ToolTip.Tip="Previous cached page" AutomationProperties.Name="Previous cached page" Command="{Binding PreviousCommand}" />
+      <Button Grid.Column="1" x:Name="NextPage" Content="→" ToolTip.Tip="Next page" AutomationProperties.Name="Next page" Command="{Binding NextCommand}" />
+      <TextBlock Grid.Column="2" Text="{Binding PageSummary}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PageSummary}" VerticalAlignment="Center" />
+      <Button Grid.Column="3" x:Name="PropertiesButton" Content="Properties" Command="{Binding PropertiesCommand}" />
+      <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Text="{Binding SelectionIdentity}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectionIdentity}" />
+    </Grid>
   </Grid>
 </UserControl>

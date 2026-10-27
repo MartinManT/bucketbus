@@ -10,10 +10,28 @@
   </Application.Resources>
   <Application.Styles>
     <FluentTheme />
+    <!-- Shared desktop density; retain the theme's readable text and focus visuals. -->
+    <Style Selector="Window.desktop Button">
+      <Setter Property="Padding" Value="8,3" /><Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="Window.desktop TextBox">
+      <Setter Property="Padding" Value="6,3" /><Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="Window.desktop ComboBox">
+      <Setter Property="Padding" Value="6,3" /><Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="Window.desktop CheckBox"><Setter Property="MinHeight" Value="28" /></Style>
+    <Style Selector="Window.desktop ListBoxItem">
+      <Setter Property="Padding" Value="6,3" /><Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="Window.desktop Expander /template/ ToggleButton">
+      <Setter Property="MinHeight" Value="28" /><Setter Property="Padding" Value="8,2" />
+    </Style>
+    <Style Selector="Window.desktop TabItem"><Setter Property="FontSize" Value="14" /><Setter Property="MinHeight" Value="30" /><Setter Property="Padding" Value="8,3" /></Style>
     <Style Selector="Border.pane">
       <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="CornerRadius" Value="3" />
     </Style>
     <Style Selector="Border.pane:focus-within">
       <Setter Property="BorderBrush" Value="{DynamicResource SystemControlHighlightAccentBrush}" />

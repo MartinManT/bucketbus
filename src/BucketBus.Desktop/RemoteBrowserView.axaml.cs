@@ -1,3 +1,5 @@
+using Avalonia;
+using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -8,9 +10,18 @@ namespace BucketBus.Desktop;
 
 public partial class RemoteBrowserView : UserControl
 {
+    public static readonly StyledProperty<ICommand?> DownloadCommandProperty = AvaloniaProperty.Register<RemoteBrowserView, ICommand?>(nameof(DownloadCommand));
+    public ICommand? DownloadCommand { get => GetValue(DownloadCommandProperty); set => SetValue(DownloadCommandProperty, value); }
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == DownloadCommandProperty && DownloadContextItem is not null) DownloadContextItem.Command = DownloadCommand;
+    }
+
     public RemoteBrowserView()
     {
         InitializeComponent();
+        SizeChanged += (_, _) => Classes.Set("narrow", Bounds.Width < 560);
         ObjectList.DoubleTapped += (_, _) => ExecuteOpen();
         // Handle navigation before ListBox consumes Enter for selection. Text editors
         // retain their native Backspace behavior. No persistence/provider work in views.

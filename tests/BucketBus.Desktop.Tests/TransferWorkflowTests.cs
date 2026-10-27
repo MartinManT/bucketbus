@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -34,6 +36,12 @@ public sealed class TransferWorkflowTests
             await BrowserFixture.UntilAsync(() => factory.Key is not null);
             Assert.True(vm.IsBusy); Assert.True(vm.UploadCommand.CanExecute(null)); Assert.False(vm.DownloadCommand.CanExecute(null));
             Assert.Equal("exact//é/a-file", factory.Key);
+            Assert.Contains("1 active", vm.QueueSummary);
+            window.Width = 1024; window.Height = 768; window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            Assert.False(window.FindControl<Expander>("TransferHistoryPanel")!.IsExpanded);
+            Assert.Contains("1 active", window.FindControl<TextBlock>("QueueSummary")!.Text);
+            Assert.True(window.FindControl<Button>("CancelTransfer")!.IsEffectivelyEnabled);
+            ResponsiveLayoutTests.Capture(window, "ux3-active-transfer");
             await local.NavigateAsync(Path.Combine(local.DirectoryPath, "other"));
             remote.Browser.PrefixInput = "other/"; await remote.Browser.GoCommand.ExecuteAsync(null);
             Assert.True(remote.Browser.IsConnected); Assert.True(vm.IsBusy);
@@ -135,6 +143,61 @@ public sealed class TransferWorkflowTests
         Assert.DoesNotContain("qualification", message, StringComparison.OrdinalIgnoreCase);
         if (error is TransferError.Conflict or TransferError.ConditionalWriteUnsupported)
             Assert.Contains("No unconditional replacement was attempted", message);
+    }
+    [AvaloniaFact]
+    public async Task Context_menus_preserve_multiselection_and_use_the_existing_queue_commands()
+    {
+        using var remote = new BrowserFixture(); await remote.ConnectAsync();
+        using var local = new LocalBrowserViewModel(new LocalFixture()); await local.InitializeAsync();
+        using var vm = TransferTestComposition.Create(remote.Manager, new Files(), new Factory(), new MemoryJournal(), local, remote.Browser);
+        var window = new MainWindow { DataContext = new MainWindowViewModel(NullLogger<MainWindowViewModel>.Instance, browser: remote.Browser, local: local, transfers: vm) };
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs();
+            var view = window.FindControl<LocalBrowserView>("LocalView")!;
+            var list = view.FindControl<ListBox>("LocalList")!;
+            var rows = local.Rows.Where(r => r.Entry.Kind == LocalEntryKind.File).ToArray();
+            foreach (var row in rows) local.SelectedRows.Add(row);
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var item = list.GetVisualDescendants().OfType<ListBoxItem>().First(i => i.DataContext is LocalRow r && rows.Contains(r));
+            var point = item.TranslatePoint(new Point(15, 12), window)!.Value;
+            window.MouseDown(point, MouseButton.Right); window.MouseUp(point, MouseButton.Right); Dispatcher.UIThread.RunJobs();
+            Assert.Equal(rows, local.SelectedRows);
+            var upload = view.FindControl<MenuItem>("UploadContextItem")!;
+            Assert.Same(vm.UploadCommand, upload.Command); Assert.True(upload.IsEffectivelyEnabled);
+            list.ContextMenu!.Close();
+            var folder = list.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.DataContext is LocalRow { Entry.Kind: LocalEntryKind.Directory });
+            point = folder.TranslatePoint(new Point(15, 12), window)!.Value;
+            window.MouseDown(point, MouseButton.Right); window.MouseUp(point, MouseButton.Right); Dispatcher.UIThread.RunJobs();
+            Assert.Equal(LocalEntryKind.Directory, Assert.Single(local.SelectedRows).Entry.Kind);
+            Assert.False(vm.UploadCommand.CanExecute(null)); list.ContextMenu.Close();
+            var download = window.FindControl<RemoteBrowserView>("BrowserView")!.FindControl<MenuItem>("DownloadContextItem")!;
+            Assert.Same(vm.DownloadCommand, download.Command); Assert.False(vm.DownloadCommand.CanExecute(null));
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Failed_result_remains_visible_when_inspector_is_collapsed()
+    {
+        using var remote = new BrowserFixture(); await remote.ConnectAsync();
+        using var local = new LocalBrowserViewModel(new LocalFixture()); await local.InitializeAsync();
+        local.SelectedRows.Add(local.Rows.Single(r => r.Entry.Name == "a-file"));
+        var journal = new MemoryJournal();
+        var factory = new Factory { Run = _ => Task.FromResult(new TransferResult(TransferState.Failed, TransferError.PermissionDenied)) };
+        using var vm = TransferTestComposition.Create(remote.Manager, new Files(), factory, journal, local, remote.Browser);
+        await vm.InitializeAsync(); await vm.UploadCommand.ExecuteAsync(null); await vm.StartQueueCommand.ExecuteAsync(null);
+        var window = new MainWindow { DataContext = new MainWindowViewModel(NullLogger<MainWindowViewModel>.Instance, browser: remote.Browser, local: local, transfers: vm) };
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs();
+            Assert.False(window.FindControl<Expander>("TransferHistoryPanel")!.IsExpanded);
+            Assert.Equal("0 unresolved · 1 failed", window.FindControl<TextBlock>("TransferAttention")!.Text);
+            Assert.Contains("Permission denied", window.FindControl<TextBlock>("TransferStatus")!.Text);
+            Assert.Single(journal.Records); Assert.Equal(1, factory.Created);
+            ResponsiveLayoutTests.Capture(window, "ux3-failed-transfer");
+        }
+        finally { window.Close(); }
     }
     private sealed class Files : ITransferFiles
     {

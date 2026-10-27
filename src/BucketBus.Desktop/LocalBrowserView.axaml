@@ -1,8 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:BucketBus.Desktop.ViewModels"
+             xmlns:local="using:BucketBus.Desktop" xmlns:vm="using:BucketBus.Desktop.ViewModels"
              x:Class="BucketBus.Desktop.LocalBrowserView" x:DataType="vm:LocalBrowserViewModel">
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="6">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="4">
     <WrapPanel>
       <Button Content="Home" Command="{Binding HomeCommand}" Margin="0,0,6,0" />
       <Button Content="Up" Command="{Binding UpCommand}" Margin="0,0,6,0" />
@@ -15,36 +15,43 @@
       <ProgressBar x:Name="LocalProgress" Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy}" AutomationProperties.Name="Loading local directory" />
       <TextBlock x:Name="LocalStatus" Text="{Binding Status}" TextWrapping="Wrap" />
     </StackPanel>
-    <Grid Grid.Row="2" ColumnDefinitions="*,75,115,80" ColumnSpacing="4">
+    <local:FileColumnsGrid Grid.Row="2" Classes="fileColumns" ColumnSpacing="4">
       <Button Content="Name" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Name}" AutomationProperties.Name="Sort local files by name" Padding="4" />
       <Button Grid.Column="1" Content="Size" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Size}" Padding="4" />
-      <Button Grid.Column="2" Content="Modified" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Modified}" Padding="4" />
-      <Button Grid.Column="3" Content="Type" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Type}" Padding="4" />
-    </Grid>
+      <Button Classes="detailColumn" Grid.Column="2" Content="Modified" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Modified}" Padding="4" />
+      <Button Classes="detailColumn" Grid.Column="3" Content="Type" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Type}" Padding="4" />
+    </local:FileColumnsGrid>
     <ListBox Grid.Row="3" x:Name="LocalList" ItemsSource="{Binding Rows}" SelectedItems="{Binding SelectedRows, Mode=OneWay}"
              SelectionMode="Multiple" MinHeight="80" Focusable="True"
-             AutomationProperties.Name="Local directories, files and links" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+             AutomationProperties.Name="Local directories, files and links" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ContextMenu><ContextMenu>
+        <MenuItem Header="Open directory" Command="{Binding OpenCommand}" />
+        <MenuItem Header="Upload selected files" x:Name="UploadContextItem" />
+        <Separator /><MenuItem Header="Refresh" Command="{Binding RefreshCommand}" />
+        <MenuItem Header="Sort by modified" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Modified}" />
+        <MenuItem Header="Sort by type" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:LocalSortField.Type}" />
+      </ContextMenu></ListBox.ContextMenu>
       <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListBox.Styles>
       <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:LocalRow">
-          <Grid ColumnDefinitions="*,75,115,80" ColumnSpacing="4" ToolTip.Tip="{Binding Identity}">
+          <local:FileColumnsGrid Classes="fileColumns" ColumnSpacing="4" ToolTip.Tip="{Binding Details}">
             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MinWidth="70" />
             <TextBlock Grid.Column="1" ToolTip.Tip="{Binding ExactSize}" TextTrimming="CharacterEllipsis">
               <TextBlock.Text><MultiBinding Converter="{StaticResource SizeDisplay}">
                 <Binding Path="Entry.Size" /><ReflectionBinding Path="DataContext.Display.Current" RelativeSource="{RelativeSource FindAncestor, AncestorType={x:Type UserControl}}" /><Binding Path="Entry.Kind" />
               </MultiBinding></TextBlock.Text>
             </TextBlock>
-            <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="3" Text="{Binding Type}" TextTrimming="CharacterEllipsis" />
-          </Grid>
+            <TextBlock Classes="detailColumn" Grid.Column="2" Text="{Binding ModifiedText}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="detailColumn" Grid.Column="3" Text="{Binding Type}" TextTrimming="CharacterEllipsis" />
+          </local:FileColumnsGrid>
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
-    <StackPanel Grid.Row="4" Spacing="3">
-      <TextBlock Text="{Binding ListingSummary}" TextWrapping="Wrap" FontSize="11" />
-      <TextBlock Text="{Binding SortSummary}" TextWrapping="Wrap" FontSize="11" />
-      <TextBlock Text="{Binding SelectionSummary}" FontSize="11" ToolTip.Tip="Links are followed only when explicitly opened. File contents are never opened." />
-    </StackPanel>
+    <Grid Grid.Row="4" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+      <TextBlock Grid.ColumnSpan="2" Text="{Binding ListingSummary}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ListingSummary}" />
+      <TextBlock Grid.Row="1" Text="{Binding SelectionSummary}" ToolTip.Tip="Links are followed only when explicitly opened. File contents are never opened." />
+      <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SortSummary}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SortSummary}" />
+    </Grid>
   </Grid>
 </UserControl>

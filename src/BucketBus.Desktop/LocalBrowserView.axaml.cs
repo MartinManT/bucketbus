@@ -1,3 +1,5 @@
+using Avalonia;
+using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -8,9 +10,18 @@ namespace BucketBus.Desktop;
 
 public partial class LocalBrowserView : UserControl
 {
+    public static readonly StyledProperty<ICommand?> UploadCommandProperty = AvaloniaProperty.Register<LocalBrowserView, ICommand?>(nameof(UploadCommand));
+    public ICommand? UploadCommand { get => GetValue(UploadCommandProperty); set => SetValue(UploadCommandProperty, value); }
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == UploadCommandProperty && UploadContextItem is not null) UploadContextItem.Command = UploadCommand;
+    }
+
     public LocalBrowserView()
     {
         InitializeComponent();
+        SizeChanged += (_, _) => Classes.Set("narrow", Bounds.Width < 560);
         LocalList.DoubleTapped += (_, _) => Open();
         Roots.SelectionChanged += (_, _) =>
         {
