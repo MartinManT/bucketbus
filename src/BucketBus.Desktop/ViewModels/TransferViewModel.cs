@@ -38,6 +38,24 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     public bool AllowRecoveryUnlock { get; set; }
     public string HistoryStatus { get => _historyStatus; private set => SetProperty(ref _historyStatus, value); }
     public string RecoveryDetails => SelectedHistory?.Details ?? "Select a record to inspect its target and recovery options.";
+    private bool _historyExpanded;
+    public bool IsHistoryExpanded { get => _historyExpanded; set => SetProperty(ref _historyExpanded, value); }
+    public bool ShowRemoveQueuedAction => SelectedHistory?.Record.State == TransferState.Queued;
+    public bool ShowDownloadConfirmation => SelectedHistory?.Record.CanRestart == true;
+    public bool ShowMultipartConfirmation => SelectedHistory?.Record is { } record && (record.CanResumeMultipart || record.CanAbortMultipart);
+    public string RecoveryGuidance => SelectedHistory?.Record switch
+    {
+        null => "Select a transfer to see its recovery options.",
+        { Resolved: true } => "This transfer is resolved. You can dismiss its history entry or add a new transfer.",
+        { State: TransferState.Queued } => "Choose Start / Continue to run this queued job, or Remove queued job to discard it.",
+        { CanReconcile: true } => "Completion uncertain: choose Reconcile upload before re-adding.",
+        { CanResumeMultipart: true } => "Confirm Resume, or Abort to clean up before re-adding.",
+        { CanAbortMultipart: true, Multipart.Phase: MultipartPhase.SendingPart } => "Part unacknowledged: confirm Abort, then re-add after cleanup.",
+        { CanAbortMultipart: true } => "Confirm and choose Abort incomplete upload. After cleanup succeeds, add the file again to start over.",
+        { Multipart.UploadId: null, Multipart: not null } => "No upload ID was saved. Safe resume and abort are unavailable; provider inspection is required. Keep this record.",
+        { CanRestart: true } => "Confirm and choose Restart download to begin again from byte zero after destination checks.",
+        _ => "Safe recovery is unavailable for this record. Keep it for inspection; a new transfer to the same destination remains blocked."
+    };
     public IAsyncRelayCommand ReloadHistoryCommand { get; }
     public IAsyncRelayCommand ReconcileCommand { get; }
     public IAsyncRelayCommand RestartCommand { get; }
@@ -92,7 +110,7 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     private bool Ready => _journalAvailable && !_disposed && !IsEnqueuing && _remote.IsConnected && _remote.ActiveBucket is not null && !_remote.IsBusy;
     private void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => NotifyCommands();
     private void SelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => NotifyCommands();
-    private void NotifyCommands() { ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); }
+    private void NotifyCommands() { OnPropertyChanged(nameof(ShowRemoveQueuedAction)); OnPropertyChanged(nameof(RecoveryGuidance)); OnPropertyChanged(nameof(ShowDownloadConfirmation)); OnPropertyChanged(nameof(ShowMultipartConfirmation)); ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); }
     private bool HistoryReady => !_disposed && !IsBusy && _journalAvailable;
     public async Task InitializeAsync()
     {
@@ -179,6 +197,11 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
             Status = $"Added {added} queued {(upload ? "uploads" : "downloads")}. Start / Continue to process them.";
         }
         catch (OperationCanceledException) { Status = $"Queue preparation cancelled; {added} recorded jobs retained."; }
+        catch (TransferException e) when (e.Error == TransferError.RecoveryUnavailable)
+        {
+            IsHistoryExpanded = true;
+            Status = $"Added {added} jobs. This destination has an unresolved transfer. Select its history record below to see the available recovery actions before adding it again.";
+        }
         catch (TransferException e) { Status = $"Added {added} jobs; enqueue stopped. " + Describe(new(TransferState.Failed, e.Error)); }
         catch { Status = $"Added {added} jobs; durable enqueue failed. Existing jobs were retained. BB-JOURNAL."; }
         finally { _preparation = null; IsEnqueuing = false; await InitializeAsync(); }

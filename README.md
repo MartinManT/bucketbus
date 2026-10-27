@@ -231,7 +231,10 @@ the action and choose **Resume multipart upload** or **Abort incomplete upload**
 Resume requires the original unchanged profile and source plus exact agreement with
 paginated `ListParts`. An unacknowledged part disables resume: no guess is made about
 its contents or whether its request remains in flight. Abort affects only the recorded
-upload ID, never an object, and checks absence after acknowledgement. An uncertain
+upload ID, never an object, and checks absence after acknowledgement. After confirmed
+abort cleanup, add the file again to start over. Closing the application requests
+cancellation; it does not remove unresolved uploads. Recovery controls sit beside the
+scrollable history details, with guidance for the selected record. An uncertain
 completion allows only full-content reconciliation; it cannot be replayed or aborted.
 An unknown upload ID cannot be cleaned up by BucketBus. Retain the evidence for
 provider investigation; incomplete parts may consume storage. No lifecycle policies

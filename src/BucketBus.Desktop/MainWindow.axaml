@@ -99,28 +99,33 @@
         <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding Transfers.Percent}" IsVisible="{Binding Transfers.IsBusy}" />
         <TextBlock Text="{Binding Transfers.Bytes}" ToolTip.Tip="{Binding Transfers.ExactBytes}" />
         <TextBlock x:Name="TransferStatus" Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
-        <Expander x:Name="TransferHistoryPanel" Header="Transfer queue, history and recovery" HorizontalAlignment="Stretch">
-          <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="5">
-            <TextBlock Text="{Binding Transfers.HistoryStatus}" TextWrapping="Wrap" />
-            <ListBox x:Name="TransferHistory" ItemsSource="{Binding Transfers.History}" SelectedItem="{Binding Transfers.SelectedHistory}" MaxHeight="100">
-              <ListBox.ItemTemplate><DataTemplate x:DataType="vm:TransferHistoryRow"><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ListBox.ItemTemplate>
-            </ListBox>
-            <ScrollViewer MaxHeight="100"><TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" /></ScrollViewer>
-            <CheckBox Content="Confirm whole-file download restart (current remote content)" IsChecked="{Binding Transfers.ConfirmRestart}" />
-            <CheckBox Content="Confirm the selected multipart resume or abort action" IsChecked="{Binding Transfers.ConfirmMultipart}" />
-            <CheckBox Content="Allow vault unlock prompt for queue and recovery" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
-            <WrapPanel Orientation="Horizontal">
-              <Button Content="Remove queued job" Command="{Binding Transfers.RemoveQueuedCommand}" />
-              <Button Content="Reload history" Command="{Binding Transfers.ReloadHistoryCommand}" />
-              <Button Content="Reconcile upload" Command="{Binding Transfers.ReconcileCommand}" />
-              <Button Content="Restart download" Command="{Binding Transfers.RestartCommand}" />
-              <Button Content="Resume multipart upload" Command="{Binding Transfers.ResumeMultipartCommand}" />
-              <Button Content="Abort incomplete upload" Command="{Binding Transfers.AbortMultipartCommand}" />
-              <Button Content="Dismiss resolved" Command="{Binding Transfers.DismissCommand}" />
-            </WrapPanel>
-          </StackPanel>
-          </ScrollViewer>
+        <Expander x:Name="TransferHistoryPanel" Header="Transfer queue, history and recovery" IsExpanded="{Binding Transfers.IsHistoryExpanded}" HorizontalAlignment="Stretch">
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <StackPanel Spacing="5">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBlock Text="{Binding Transfers.HistoryStatus}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Transfers.HistoryStatus}" FontSize="12" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="Reload history" Command="{Binding Transfers.ReloadHistoryCommand}" />
+              </Grid>
+              <ListBox x:Name="TransferHistory" ItemsSource="{Binding Transfers.History}" SelectedItem="{Binding Transfers.SelectedHistory}" MaxHeight="80">
+                <ListBox.ItemTemplate><DataTemplate x:DataType="vm:TransferHistoryRow"><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ListBox.ItemTemplate>
+              </ListBox>
+              <ScrollViewer MaxHeight="28"><TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" FontSize="12" /></ScrollViewer>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="5">
+              <TextBlock Text="{Binding Transfers.RecoveryGuidance}" TextWrapping="Wrap" FontSize="12" />
+              <CheckBox Content="Confirm whole-file download restart" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" IsChecked="{Binding Transfers.ConfirmRestart}" />
+              <CheckBox Content="Confirm multipart recovery action" IsVisible="{Binding Transfers.ShowMultipartConfirmation}" IsChecked="{Binding Transfers.ConfirmMultipart}" />
+              <CheckBox Content="Allow vault unlock prompt" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
+              <WrapPanel Orientation="Horizontal">
+                <Button Content="Remove queued job" IsVisible="{Binding Transfers.ShowRemoveQueuedAction}" Command="{Binding Transfers.RemoveQueuedCommand}" />
+                <Button Content="Reconcile upload" IsVisible="{Binding Transfers.SelectedHistory.Record.CanReconcile}" Command="{Binding Transfers.ReconcileCommand}" />
+                <Button Content="Restart download" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" Command="{Binding Transfers.RestartCommand}" />
+                <Button Content="Resume multipart upload" FontSize="12" IsVisible="{Binding Transfers.SelectedHistory.Record.CanResumeMultipart}" Command="{Binding Transfers.ResumeMultipartCommand}" />
+                <Button Content="Abort incomplete upload" FontSize="12" IsVisible="{Binding Transfers.SelectedHistory.Record.CanAbortMultipart}" Command="{Binding Transfers.AbortMultipartCommand}" />
+                <Button Content="Dismiss resolved" IsVisible="{Binding Transfers.SelectedHistory.Record.Resolved}" Command="{Binding Transfers.DismissCommand}" />
+              </WrapPanel>
+            </StackPanel>
+          </Grid>
         </Expander>
       </StackPanel>
     </Border>
