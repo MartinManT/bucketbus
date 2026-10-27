@@ -58,6 +58,13 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
     private int _attempts;
     private Dictionary<string, string> _query = [];
     private bool _conditional;
+    // Fixed allowlisted diagnostics only; never retain request values or provider text.
+    public string? FailureReason { get; private set; }
+    private void Reject(string reason)
+    {
+        FailureReason = reason;
+        throw new TransferException(TransferError.RemoteRejected);
+    }
     public bool PutSent { get; private set; }
     public long? Length { get; private set; }
     public void Begin(string bucket, string key, HttpMethod method)
@@ -71,7 +78,7 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
             throw new TransferException(TransferError.InvalidName);
         _host = profile.Settings.Addressing == AddressingStyle.VirtualHosted ? bucket + "." + _endpoint.Host : _endpoint.Host;
         _path = (profile.Settings.Addressing == AddressingStyle.Path ? "/" + bucket : "") + "/" + key;
-        _method = method; _attempts = 0; Length = null; _query = []; _conditional = method == HttpMethod.Put;
+        _method = method; _attempts = 0; Length = null; FailureReason = null; _query = []; _conditional = method == HttpMethod.Put;
     }
     public void BeginMultipart(string bucket, string key, HttpMethod method, string? uploadId = null, int? part = null, int? marker = null, bool completing = false)
     {
@@ -99,18 +106,22 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
     {
         var uri = request.RequestUri;
-        if (uri is null || uri.Scheme != "https" || !string.Equals(uri.Host, _host, StringComparison.OrdinalIgnoreCase)
-            || uri.Port != _endpoint.Port || uri.UserInfo.Length != 0 || request.Method != _method
-            || Uri.UnescapeDataString(uri.AbsolutePath) != _path || !QueryMatches(uri)
-            || ++_attempts != 1 || !request.Headers.TryGetValues("Authorization", out var auth)
-            || !auth.Single().Contains($"/{profile.Settings.Region}/s3/aws4_request", StringComparison.Ordinal))
-            throw new TransferException(TransferError.RemoteRejected);
-        if (_conditional && (!request.Headers.TryGetValues("If-None-Match", out var condition) || condition.Single() != "*"))
-            throw new TransferException(TransferError.RemoteRejected);
+        var reason = uri is null || uri.Scheme != "https" || !string.Equals(uri.Host, _host, StringComparison.OrdinalIgnoreCase)
+            || uri.Port != _endpoint.Port || uri.UserInfo.Length != 0 ? "Request endpoint or authority did not match the saved profile."
+            : request.Method != _method ? "Request method did not match the requested operation."
+            : Uri.UnescapeDataString(uri.AbsolutePath) != _path ? "Request path did not match the recorded bucket and key."
+            : !QueryMatches(uri) ? "Multipart request parameters did not match the recorded upload."
+            : ++_attempts != 1 ? "An unexpected repeat request was blocked."
+            : !request.Headers.TryGetValues("Authorization", out var auth) || auth.Count() != 1
+                || !auth.Single().Contains($"/{profile.Settings.Region}/s3/aws4_request", StringComparison.Ordinal)
+                ? "Request signing region or authorization was invalid." : null;
+        if (reason is not null) Reject(reason);
+        if (_conditional && (!request.Headers.TryGetValues("If-None-Match", out var condition) || condition.Count() != 1 || condition.Single() != "*"))
+            Reject("The required create-only condition was missing or invalid.");
         token.ThrowIfCancellationRequested();
         if (_method == HttpMethod.Put && _query.Count == 0) PutSent = true;
         var response = await base.SendAsync(request, token).ConfigureAwait(false);
-        if ((int)response.StatusCode is >= 300 and < 400) { response.Dispose(); throw new TransferException(TransferError.RemoteRejected); }
+        if ((int)response.StatusCode is >= 300 and < 400) { response.Dispose(); Reject("Provider returned a redirect; authenticated redirects are blocked."); }
         Length = response.Content.Headers.ContentLength;
         // Successful GET stays streamed. Bound PUT/error bodies before SDK XML parsing.
         if (_method == HttpMethod.Get && _query.Count == 0 && response.IsSuccessStatusCode) return response;
@@ -119,7 +130,7 @@ internal sealed class TransferTransport(ConnectionProfile profile, HttpMessageHa
             await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
             using var buffer = new MemoryStream(); var chunk = new byte[4096]; int n;
             while ((n = await stream.ReadAsync(chunk, token).ConfigureAwait(false)) != 0)
-            { if (buffer.Length + n > (_query.Count > 0 ? 2 * 1024 * 1024 : 65536)) throw new TransferException(TransferError.RemoteRejected); buffer.Write(chunk, 0, n); }
+            { if (buffer.Length + n > (_query.Count > 0 ? 2 * 1024 * 1024 : 65536)) Reject("Provider response exceeded the allowed size."); buffer.Write(chunk, 0, n); }
             var content = new ByteArrayContent(buffer.ToArray());
             foreach (var h in response.Content.Headers) content.Headers.TryAddWithoutValidation(h.Key, h.Value);
             response.Content.Dispose(); response.Content = content; return response;

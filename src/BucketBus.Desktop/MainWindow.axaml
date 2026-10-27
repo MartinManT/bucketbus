@@ -132,9 +132,13 @@
             </Grid>
             <TabControl Grid.Column="1" x:Name="InspectorTabs" SelectedIndex="{Binding InspectorTab}">
               <TabItem Header="Recovery">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                <Grid RowDefinitions="Auto,*" RowSpacing="4">
+                  <StackPanel Spacing="3">
+                    <TextBlock x:Name="RecoveryStatus" Text="{Binding Transfers.RecoveryFeedback}" TextWrapping="Wrap" AutomationProperties.Name="Recovery action status" />
+                    <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding Transfers.IsBusy}" AutomationProperties.Name="Transfer or recovery in progress" />
+                  </StackPanel>
+                  <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
                   <StackPanel Spacing="4" Margin="0,4,0,0">
-                    <TextBlock Text="{Binding Transfers.RecoveryGuidance}" TextWrapping="Wrap" />
                     <CheckBox Content="Confirm whole-file download restart" IsVisible="{Binding Transfers.ShowDownloadConfirmation}" IsChecked="{Binding Transfers.ConfirmRestart}" />
                     <CheckBox Content="Confirm multipart recovery action" IsVisible="{Binding Transfers.ShowMultipartConfirmation}" IsChecked="{Binding Transfers.ConfirmMultipart}" />
                     <CheckBox Content="Allow vault unlock prompt" IsChecked="{Binding Transfers.AllowRecoveryUnlock}" />
@@ -150,10 +154,10 @@
                     <Expander Header="Operation details" HorizontalAlignment="Stretch">
                       <TextBlock Text="{Binding Transfers.RecoveryDetails}" TextWrapping="Wrap" />
                     </Expander>
-                    <TextBlock Text="{Binding Transfers.Status}" TextWrapping="Wrap" />
                     <TextBlock x:Name="UploadProviderNotice" Classes="secondary" Text="Upload collision protection depends on the provider honoring create-only requests." TextWrapping="Wrap" />
                   </StackPanel>
-                </ScrollViewer>
+                  </ScrollViewer>
+                </Grid>
               </TabItem>
               <TabItem Header="Properties">
                 <Grid RowDefinitions="Auto,*">

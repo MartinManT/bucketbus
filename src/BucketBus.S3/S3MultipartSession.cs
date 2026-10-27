@@ -139,6 +139,7 @@ internal sealed partial class S3TransferSession
     {
         if (Interlocked.Exchange(ref _used, 1) != 0) return new(TransferState.Interrupted, TransferError.Busy, CleanupRequired: true);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(deadline);
+        var verifyingAbsence = false;
         try
         {
             record.Validate();
@@ -154,6 +155,7 @@ internal sealed partial class S3TransferSession
             catch (AmazonS3Exception e) when (e.StatusCode == HttpStatusCode.NotFound && e.ErrorCode == "NoSuchUpload")
             { /* Prior explicit abort or provider expiry: still require the read-only absence check below. */ }
             // Acknowledgement alone may leave in-flight parts. Verify absence; never delete a final object.
+            verifyingAbsence = true;
             transport.BeginMultipart(record.Bucket, record.Key, HttpMethod.Get, state.UploadId, marker: 0);
             try
             {
@@ -166,6 +168,22 @@ internal sealed partial class S3TransferSession
             return new(TransferState.Cancelled, Verification: "Owned multipart upload aborted and absence confirmed. No object deletion requested.");
         }
         catch (JournalException) { return new(TransferState.RequiresReconciliation, TransferError.JournalUnavailable, CleanupRequired: true); }
-        catch (Exception e) { return new(TransferState.Interrupted, Error(e, token, timeout.Token), CleanupRequired: true); }
+        catch (Exception e)
+        {
+            var detail = transport.FailureReason;
+            if (detail is null && e is AmazonS3Exception service)
+            {
+                var code = service.ErrorCode switch
+                {
+                    "NoSuchBucket" => "NoSuchBucket", "NoSuchKey" => "NoSuchKey", "NoSuchUpload" => "NoSuchUpload",
+                    "AccessDenied" => "AccessDenied", "InvalidRequest" => "InvalidRequest",
+                    "InvalidAccessKeyId" => "InvalidAccessKeyId", "SignatureDoesNotMatch" => "SignatureDoesNotMatch",
+                    "ExpiredToken" => "ExpiredToken", _ => "unclassified provider error"
+                };
+                detail = $"Provider returned HTTP {(int)service.StatusCode} ({code}).";
+            }
+            var diagnostic = detail is null ? "" : " " + (verifyingAbsence ? "Cleanup verification: " : "Abort request: ") + detail;
+            return new(TransferState.Interrupted, Error(e, token, timeout.Token), Verification: diagnostic, CleanupRequired: true);
+        }
     }
 }

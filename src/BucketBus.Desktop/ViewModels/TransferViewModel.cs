@@ -37,6 +37,16 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     public IAsyncRelayCommand AbortMultipartCommand { get; }
     public bool AllowRecoveryUnlock { get; set; }
     public string HistoryStatus { get => _historyStatus; private set => SetProperty(ref _historyStatus, value); }
+    private Guid? _recoveryFeedbackId;
+    private string? _recoveryFeedback;
+    // Keep the last explicit action result with its operation across a history reload.
+    public string RecoveryFeedback => _recoveryFeedbackId == SelectedHistory?.Record.Id && _recoveryFeedback is not null
+        ? _recoveryFeedback : RecoveryGuidance;
+    private void SetRecoveryFeedback(Guid id, string message)
+    {
+        _recoveryFeedbackId = id; _recoveryFeedback = message;
+        OnPropertyChanged(nameof(RecoveryFeedback));
+    }
     public string RecoveryDetails => SelectedHistory?.Details ?? "Select a record to inspect its target and recovery options.";
     private bool _historyExpanded;
     public bool IsHistoryExpanded { get => _historyExpanded; set => SetProperty(ref _historyExpanded, value); }
@@ -112,7 +122,7 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
     private bool Ready => _journalAvailable && !_disposed && !IsEnqueuing && _remote.IsConnected && _remote.ActiveBucket is not null && !_remote.IsBusy;
     private void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => NotifyCommands();
     private void SelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => NotifyCommands();
-    private void NotifyCommands() { OnPropertyChanged(nameof(ShowRemoveQueuedAction)); OnPropertyChanged(nameof(RecoveryGuidance)); OnPropertyChanged(nameof(ShowDownloadConfirmation)); OnPropertyChanged(nameof(ShowMultipartConfirmation)); ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); OnPropertyChanged(nameof(AttentionSummary)); }
+    private void NotifyCommands() { OnPropertyChanged(nameof(ShowRemoveQueuedAction)); OnPropertyChanged(nameof(RecoveryGuidance)); OnPropertyChanged(nameof(RecoveryFeedback)); OnPropertyChanged(nameof(ShowDownloadConfirmation)); OnPropertyChanged(nameof(ShowMultipartConfirmation)); ResumeMultipartCommand.NotifyCanExecuteChanged(); AbortMultipartCommand.NotifyCanExecuteChanged(); UploadCommand.NotifyCanExecuteChanged(); DownloadCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged(); ReloadHistoryCommand.NotifyCanExecuteChanged(); ReconcileCommand.NotifyCanExecuteChanged(); RestartCommand.NotifyCanExecuteChanged(); DismissCommand.NotifyCanExecuteChanged(); StartQueueCommand.NotifyCanExecuteChanged(); PauseQueueCommand.NotifyCanExecuteChanged(); RemoveQueuedCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(QueueSummary)); OnPropertyChanged(nameof(AttentionSummary)); }
     private bool HistoryReady => !_disposed && !IsBusy && _journalAvailable;
     public async Task InitializeAsync()
     {
@@ -152,18 +162,35 @@ public sealed class TransferViewModel : ObservableObject, IDisposable, IAsyncDis
         var updates = new Progress<TransferProgress>(p =>
         {
             if (_disposed || _operation != cancellation) return;
-            Status = p.Stage; _progressBytes = p.Bytes; _progressTotal = p.Total; NotifyByteDisplay();
+            Status = p.Stage; SetRecoveryFeedback(selected.Record.Id, p.Stage); _progressBytes = p.Bytes; _progressTotal = p.Total; NotifyByteDisplay();
             Percent = p.Total > 0 ? Math.Min(99, 100d * p.Bytes / p.Total.Value) : 0;
         });
         try
         {
             Status = abort ? "Checking and aborting only the recorded incomplete upload…" : "Checking source identity and reconciling remote parts…";
+            SetRecoveryFeedback(selected.Record.Id, Status);
             var result = await _coordinator.RecoverMultipartAsync(selected.Record.Id, abort, true, AllowRecoveryUnlock, updates, cancellation.Token);
-            if (!_disposed) { Status = Describe(result); if (result.State == TransferState.Completed) Percent = 100; }
+            if (!_disposed)
+            {
+                Status = Describe(result);
+                SetRecoveryFeedback(selected.Record.Id, abort ? AbortFeedback(result) : Status);
+                if (result.State == TransferState.Completed) Percent = 100;
+            }
         }
-        catch { Status = "Multipart recovery remains unresolved; retain the record for inspection."; }
+        catch
+        {
+            Status = "Multipart recovery remains unresolved; retain the record for inspection.";
+            SetRecoveryFeedback(selected.Record.Id, Status);
+        }
         finally { _operation = null; IsBusy = false; ConfirmMultipart = false; await InitializeAsync(); }
     }
+    private static string AbortFeedback(TransferResult result) => result switch
+    {
+        { State: TransferState.Cancelled, Error: TransferError.None, CleanupRequired: false } => "Incomplete upload aborted and cleanup confirmed. Add the file again to start over.",
+        { Error: TransferError.ProfileChanged } => "Abort blocked: the saved profile revision or target has changed. Reconnecting does not rebind this transfer. Keep the record for inspection.",
+        { Error: TransferError.CredentialsUnavailable } => "Abort blocked: credentials for the saved profile are unavailable. Check the vault or session credentials. No abort request was sent.",
+        _ => "Abort not confirmed. " + Describe(result)
+    };
     private async Task DismissAsync()
     {
         if (SelectedHistory is not { } selected || !HistoryReady || !selected.Record.Resolved) return;
