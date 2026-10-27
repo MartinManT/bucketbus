@@ -9,8 +9,9 @@ public sealed class DownloadRetryCrashTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     [Theory]
-    [InlineData("delay")] [InlineData("second-get")] [InlineData("creation-gap")]
-    public async Task Process_termination_keeps_retry_identity_and_never_resumes_or_cleans_at_startup(string boundary)
+    [InlineData("delay", false)] [InlineData("second-get", false)] [InlineData("creation-gap", false)]
+    [InlineData("second-get", true)]
+    public async Task Process_termination_keeps_retry_identity_and_never_resumes_or_cleans_at_startup(string boundary, bool delayedKill)
     {
         var root = Path.Combine(Path.GetTempPath(), "bucketbus-retry-crash-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
@@ -23,6 +24,9 @@ public sealed class DownloadRetryCrashTests
             {
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token); deadline.CancelAfter(TimeSpan.FromSeconds(30));
                 while (!File.Exists(Path.Combine(root, "ready"))) { Assert.False(child.HasExited, "Retry worker exited before the durable barrier"); await Task.Delay(20, deadline.Token); }
+                // Deliberately exceed the fixture's unchanged five-second request deadline.
+                // The crash boundary must remain pinned even when the controller is slow.
+                if (delayedKill) await Task.Delay(TimeSpan.FromSeconds(6), deadline.Token);
             }
             finally { if (!child.HasExited) child.Kill(true); await child.WaitForExitAsync(Token); await output; await error; }
             var operation = Guid.Parse(await File.ReadAllTextAsync(Path.Combine(root, "ready"), Token));
@@ -48,16 +52,22 @@ public sealed class DownloadRetryCrashTests
         var root = Environment.GetEnvironmentVariable("BUCKETBUS_RETRY_CRASH_DIR"); var boundary = Environment.GetEnvironmentVariable("BUCKETBUS_RETRY_CRASH_BOUNDARY");
         if (root is null || boundary is null) return;
         await using var f = new RetryFixture(root); var operation = await f.Add(); await f.Add("tail.bin");
-        async Task Stop(CancellationToken ct)
-        { await File.WriteAllTextAsync(Path.Combine(root, "ready"), operation.Id.ToString("N"), ct); await Task.Delay(Timeout.InfiniteTimeSpan, ct); }
-        f.Factory.Send = async (_, number, ct) =>
+        void Stop()
+        {
+            // Publish complete readiness before parking this subprocess. Cancellation must not
+            // unwind into another attempt or clean up the very state the parent will inspect.
+            var ready = Path.Combine(root, "ready");
+            File.WriteAllText(ready + ".tmp", operation.Id.ToString("N")); File.Move(ready + ".tmp", ready);
+            Thread.Sleep(Timeout.Infinite); // Only the parent process kill releases this crash barrier.
+        }
+        f.Factory.Send = (_, number, _) =>
         {
             if (number == 1) throw new HttpRequestException(HttpRequestError.ConnectionError, "fixture");
-            if (boundary == "second-get") await Stop(ct);
-            return Response(Data);
+            if (boundary == "second-get") Stop();
+            return Task.FromResult(Response(Data));
         };
-        f.OnDelay = (_, ct) => boundary == "delay" ? Stop(ct) : Task.CompletedTask;
-        if (boundary == "creation-gap") f.Files.AfterCreate = (number, ct) => number == 2 ? Stop(ct) : Task.CompletedTask;
+        f.OnDelay = (_, _) => { if (boundary == "delay") Stop(); return Task.CompletedTask; };
+        if (boundary == "creation-gap") f.Files.AfterCreate = (number, _) => { if (number == 2) Stop(); return Task.CompletedTask; };
         await f.Start();
     }
 }
